@@ -18,6 +18,8 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 import requests
 
+import base64
+
 try:
     from transformers import (
         AutoTokenizer,
@@ -51,6 +53,8 @@ from fastchat.utils import build_logger, pretty_print_semaphore, get_context_len
 
 worker_id = str(uuid.uuid4())[:8]
 logger = build_logger("model_worker", f"model_worker_{worker_id}.log")
+
+enable_attest = False
 
 app = FastAPI()
 
@@ -99,6 +103,18 @@ class BaseModelWorker:
             daemon=True,
         )
         self.heart_beat_thread.start()
+
+    def bigdl_quote_generation(self, userdata):
+        if not enable_attest:
+            return {"quote": "Attestation not enabled"}
+        try:
+            from bigdl.ppml.attestation import quote_generator
+
+            quote_b = quote_generator.generate_tdx_quote(userdata)
+            quote = base64.b64encode(quote_b).decode("utf-8")
+            return {"quote": quote}
+        except Exception as e:
+            return {"quote": "quote generation failed: %s" % (e)}
 
     def register_to_controller(self):
         logger.info("Register to controller")
@@ -253,6 +269,10 @@ class ModelWorker(BaseModelWorker):
                     ret["finish_reason"] = output["finish_reason"]
                 if "logprobs" in output:
                     ret["logprobs"] = output["logprobs"]
+                if "first_token_time" in output:
+                    ret["first_token_time"] = output["first_token_time"]
+                if "rest_token_time" in output:
+                    ret["rest_token_time"] = output["rest_token_time"]
                 yield json.dumps(ret).encode() + b"\0"
         except torch.cuda.OutOfMemoryError as e:
             ret = {
@@ -446,6 +466,11 @@ async def api_get_conv(request: Request):
 async def api_model_details(request: Request):
     return {"context_length": worker.context_len}
 
+@app.post("/attest")
+async def attest(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return worker.bigdl_quote_generation(userdata)
 
 def create_model_worker():
     parser = argparse.ArgumentParser()
@@ -473,8 +498,31 @@ def create_model_worker():
     )
     parser.add_argument("--stream-interval", type=int, default=2)
     parser.add_argument("--no-register", action="store_true")
+    parser.add_argument(
+        "--enable-tls",
+        action="store_true",
+        help="enable tls",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        type=str,
+        help="certificate path used for tls verification",
+        default="",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        type=str,
+        help="server key path used for tls verification",
+        default="",
+    )
+    parser.add_argument(
+        "--attest", action="store_true", help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
+
+    global enable_attest
+    enable_attest = args.attest
 
     if args.gpus:
         if len(args.gpus.split(",")) < args.num_gpus:
@@ -519,4 +567,15 @@ def create_model_worker():
 
 if __name__ == "__main__":
     args, worker = create_model_worker()
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.enable_tls:
+        # TODO: this may cause error if certfile and keyfile are not available
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            ssl_certfile=args.ssl_certfile,
+            ssl_keyfile=args.ssl_keyfile,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")

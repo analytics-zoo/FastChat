@@ -27,6 +27,8 @@ import shortuuid
 import tiktoken
 import uvicorn
 
+import base64
+
 from fastchat.constants import (
     WORKER_API_TIMEOUT,
     WORKER_API_EMBEDDING_BATCH_SIZE,
@@ -59,6 +61,11 @@ from fastchat.protocol.api_protocol import (
     APITokenCheckRequest,
     APITokenCheckResponse,
     APITokenCheckResponseItem,
+)
+from fastchat.protocol.api_protocol import (
+    BigDLAttestationRequest,
+    BigDLAttestationResponseItem,
+    BigDLAttestationResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,6 +102,7 @@ app_settings = AppSettings()
 app = fastapi.FastAPI()
 headers = {"User-Agent": "FastChat API Server"}
 get_bearer_token = HTTPBearer(auto_error=False)
+enable_attest = False
 
 
 async def check_api_key(
@@ -398,6 +406,8 @@ async def create_chat_completion(request: ChatCompletionRequest):
                 finish_reason=content.get("finish_reason", "stop"),
             )
         )
+
+
         if "usage" in content:
             task_usage = UsageInfo.parse_obj(content["usage"])
             for usage_key, usage_value in task_usage.dict().items():
@@ -501,31 +511,44 @@ async def create_completion(request: CompletionRequest):
                 )
                 text_completions.append(content)
 
-        try:
-            all_tasks = await asyncio.gather(*text_completions)
-        except Exception as e:
-            return create_error_response(ErrorCode.INTERNAL_ERROR, str(e))
+            try:
+                all_tasks = await asyncio.gather(*text_completions)
+            except Exception as e:
+                return create_error_response(ErrorCode.INTERNAL_ERROR, str(e))
 
-        choices = []
-        usage = UsageInfo()
-        for i, content in enumerate(all_tasks):
-            if content["error_code"] != 0:
-                return create_error_response(content["error_code"], content["text"])
-            choices.append(
-                CompletionResponseChoice(
-                    index=i,
-                    text=content["text"],
-                    logprobs=content.get("logprobs", None),
-                    finish_reason=content.get("finish_reason", "stop"),
-                )
+            choices = []
+            usage = UsageInfo()
+            enable_perf_output = os.environ.get("ENABLE_PERF_OUTPUT") == "true"
+            for i, content in enumerate(all_tasks):
+                if content["error_code"] != 0:
+                    return create_error_response(content["error_code"], content["text"])
+                if enable_perf_output:
+                    choices.append(
+                        CompletionResponseChoice(
+                            index=i,
+                            text=content["text"],
+                            logprobs=content.get("logprobs", None),
+                            finish_reason=content.get("finish_reason", "stop"),
+                            first_token_time=content.get("first_token_time", None),
+                            rest_token_time=content.get("rest_token_time", None),
+                        )
+                    )
+                else:
+                    choices.append(
+                        CompletionResponseChoice(
+                            index=i,
+                            text=content["text"],
+                            logprobs=content.get("logprobs", None),
+                            finish_reason=content.get("finish_reason", "stop"),
+                        )
+                    )
+                task_usage = UsageInfo.parse_obj(content["usage"])
+                for usage_key, usage_value in task_usage.dict().items():
+                    setattr(usage, usage_key, getattr(usage, usage_key) + usage_value)
+
+            return CompletionResponse(
+                model=request.model, choices=choices, usage=UsageInfo.parse_obj(usage)
             )
-            task_usage = UsageInfo.parse_obj(content["usage"])
-            for usage_key, usage_value in task_usage.dict().items():
-                setattr(usage, usage_key, getattr(usage, usage_key) + usage_value)
-
-        return CompletionResponse(
-            model=request.model, choices=choices, usage=UsageInfo.parse_obj(usage)
-        )
 
 
 async def generate_completion_stream_generator(
@@ -759,6 +782,7 @@ async def create_chat_completion(request: APIChatCompletionRequest):
                 finish_reason=content.get("finish_reason", "stop"),
             )
         )
+
         task_usage = UsageInfo.parse_obj(content["usage"])
         for usage_key, usage_value in task_usage.dict().items():
             setattr(usage, usage_key, getattr(usage, usage_key) + usage_value)
@@ -767,7 +791,51 @@ async def create_chat_completion(request: APIChatCompletionRequest):
 
 
 ### END GENERAL API - NOT OPENAI COMPATIBLE ###
+@app.post("/api/v1/attest")
+async def bigdl_quote_generation(request: BigDLAttestationRequest):
+    if not enable_attest:
+        return BigDLAttestationResponse(
+            message="Attestation not enabled", quote_list=[]
+        )
 
+    userdata = request.userdata
+    quote_list = []
+    try:
+        from bigdl.ppml.attestation import quote_generator
+
+        quote_b = quote_generator.generate_tdx_quote(userdata)
+        quote = base64.b64encode(quote_b).decode("utf-8")
+        quote_list.append(
+            BigDLAttestationResponseItem(role="openai_api_server", quote=quote)
+        )
+    except Exception as e:
+        quote_list.append(
+            BigDLAttestationResponseItem(
+                role="openai_api_server", quote="quote generation failed: %s" % (e)
+            )
+        )
+    async with httpx.AsyncClient() as client:
+        controller_address = app_settings.controller_address
+        ret = await client.post(
+            controller_address + "/attest", json={"userdata": userdata}
+        )
+        quote_ret = ret.json()["quote"]
+        quote_list.append(
+            BigDLAttestationResponseItem(role="controller", quote=quote_ret)
+        )
+        ret = await client.post(controller_address + "/refresh_all_workers")
+        ret = await client.post(
+            controller_address + "/attest_workers", json={"userdata": userdata}
+        )
+        workers_quote_ret = ret.json()["quote_list"]
+        for worker_name, worker_quote in workers_quote_ret.items():
+            quote_list.append(
+                BigDLAttestationResponseItem(
+                    role="worker-%s" % worker_name, quote=worker_quote
+                )
+            )
+
+    return BigDLAttestationResponse(message="Success", quote_list=quote_list)
 
 def create_openai_api_server():
     parser = argparse.ArgumentParser(
@@ -795,6 +863,30 @@ def create_openai_api_server():
         type=lambda s: s.split(","),
         help="Optional list of comma separated API keys",
     )
+
+    parser.add_argument(
+        "--enable-tls",
+        action="store_true",
+        help="enable tls",
+    )
+
+    parser.add_argument(
+        "--ssl-certfile",
+        type=str,
+        help="certificate path used for tls verification",
+        default="",
+    )
+
+    parser.add_argument(
+        "--ssl-keyfile",
+        type=str,
+        help="server key path used for tls verification",
+        default="",
+    )
+
+    parser.add_argument(
+        "--attest", action="store_true", help="whether enable attesation"
+    )
     args = parser.parse_args()
 
     app.add_middleware(
@@ -806,6 +898,8 @@ def create_openai_api_server():
     )
     app_settings.controller_address = args.controller_address
     app_settings.api_keys = args.api_keys
+    global enable_attest
+    enable_attest = args.attest
 
     logger.info(f"args: {args}")
     return args
@@ -813,4 +907,15 @@ def create_openai_api_server():
 
 if __name__ == "__main__":
     args = create_openai_api_server()
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.enable_tls:
+        # TODO: this may cause error if certfile and keyfile are not available
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            ssl_certfile=args.ssl_certfile,
+            ssl_keyfile=args.ssl_keyfile,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")

@@ -41,7 +41,12 @@ from fastchat.utils import (
     get_window_url_params_js,
     parse_gradio_auth_creds,
 )
+from fastchat.serve.openai_api_server import get_gen_params
 
+import subprocess
+import base64
+import time
+import hashlib
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
 
@@ -77,6 +82,7 @@ ip_expiration_dict = defaultdict(lambda: 0)
 # }
 openai_compatible_models_info = {}
 
+enable_attest = False
 
 class State:
     def __init__(self, model_name):
@@ -149,6 +155,27 @@ def get_model_list(
     return models
 
 
+def load_demo_single_comp(models, url_params):
+    selected_model = models[0] if len(models) > 0 else ""
+    if "model" in url_params:
+        model = url_params["model"]
+        if model in models:
+            selected_model = model
+
+    dropdown_update = gr.Dropdown.update(
+        choices=models, value=selected_model, visible=True
+    )
+
+    return (
+        dropdown_update,
+        gr.Chatbot.update(visible=True),
+        gr.Textbox.update(visible=True),
+        gr.Button.update(visible=True),
+        gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True),
+    )
+
+
 def load_demo_single(models, url_params):
     selected_model = models[0] if len(models) > 0 else ""
     if "model" in url_params:
@@ -169,7 +196,23 @@ def load_demo_single(models, url_params):
         gr.Button.update(visible=True),
         gr.Row.update(visible=True),
         gr.Accordion.update(visible=True),
+        gr.Accordion.update(visible=True),
     )
+
+
+def load_demo_completion(url_params, request: gr.Request):
+    global models
+
+    ip = request.client.host
+    logger.info(f"load_demo_completion. ip: {ip}. params: {url_params}")
+    ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
+
+    if args.model_list_mode == "reload":
+        models = get_model_list(
+            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+        )
+
+    return load_demo_single_comp(models, url_params)
 
 
 def load_demo(url_params, request: gr.Request):
@@ -233,6 +276,10 @@ def clear_history(request: gr.Request):
     return (state, [], "") + (disable_btn,) * 5
 
 
+def clear_completion_history(request: gr.Request):
+    return ("", "") + (disable_btn,) * 2
+
+
 def add_text(state, model_selector, text, request: gr.Request):
     ip = request.client.host
     logger.info(f"add_text. ip: {ip}. len: {len(text)}")
@@ -281,6 +328,46 @@ def post_process_code(code):
                 blocks[i] = blocks[i].replace("\\_", "_")
         code = sep.join(blocks)
     return code
+
+
+async def model_worker_completion_stream_iter(
+    model_name,
+    worker_addr,
+    message,
+    temperature,
+    top_p,
+    max_new_tokens,
+):
+    # Generate generate params
+    gen_params = await get_gen_params(
+        model_name,
+        worker_addr,
+        message,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_new_tokens,
+        echo=False,
+        stream=True,
+        stop=None,
+    )
+
+    # Print a log
+    logger.info(f"==== request ====\n{gen_params}")
+
+    # Send the request to the worker, and get response
+    response = requests.post(
+        worker_addr + "/worker_generate_stream",
+        headers=headers,
+        json=gen_params,
+        stream=True,
+        timeout=WORKER_API_TIMEOUT,
+    )
+    print(response)
+    # Handle the response, and decode the result
+    for chunk in response.iter_lines(decode_unicode=False, delimiter=b"\0"):
+        if chunk:
+            data = json.loads(chunk.decode())
+            yield data
 
 
 def model_worker_stream_iter(
@@ -546,6 +633,227 @@ def get_model_description_md(models):
         ct += 1
     return model_description_md
 
+def attest(user_data):
+    from bigdl.ppml.attestation import attestation_service, quote_generator
+    cur_timestamp = str(int(time.time()))
+    report_data_base = user_data + cur_timestamp
+    sha256 = hashlib.sha256()
+    sha256.update(report_data_base.encode())
+    user_report_data = sha256.hexdigest()
+    try:
+        quote_b = quote_generator.generate_tdx_quote(user_report_data)
+        base64_data = base64.b64encode(quote_b).decode('utf-8')
+    except Exception as e:
+        base64_data = "Gradio web server generate quote failed: %s" % (e)
+    header_off = 0
+    report_body_off = 48
+    report_data_len = 64
+    quote_list=[]
+
+    ret = requests.post(controller_url + "/attest", json={"userdata": user_data})
+    assert ret.status_code == 200
+    quote_ret = ret.json()["quote"]
+    quote_list.append(["controller","Unverified", quote_ret])
+
+    ret = requests.post(controller_url + "/refresh_all_workers")
+    assert ret.status_code == 200
+
+    ret = requests.post(controller_url + "/attest_workers", json={"userdata": user_data})
+    assert ret.status_code == 200
+    workers_quote_ret = ret.json()["quote_list"]
+    for worker_name, worker_quote in workers_quote_ret.items():
+        quote_list.append(["worker-%s"%worker_name, "Unverified", worker_quote])
+
+    return base64_data, quote_list, cur_timestamp
+
+
+def verify(as_url, as_app_id, as_api_key, quote_list):
+    from bigdl.ppml.attestation import attestation_service, quote_generator
+    print(quote_list)
+    for index, quote_row in quote_list.iterrows():
+        print(quote_row)
+        attestation_result = attestation_service.bigdl_attestation_service(as_url, as_app_id, as_api_key, base64.b64decode(quote_row['quote']), "")
+        if attestation_result >= 0:
+            quote_row['status'] = "Attestation Successed"
+        else:
+            quote_row['status'] = "Attestation Failed"
+    return quote_list
+
+# Return button states
+async def bot_completion(
+    msg, model_name, temperature, top_p, max_new_tokens, request: gr.Request
+):
+    logger.info(f"bot_completion. ip: {request.client.host}")
+    temperature = float(temperature)
+    top_p = float(top_p)
+    max_new_tokens = int(max_new_tokens)
+
+    ret = requests.post(
+        controller_url + "/get_worker_address", json={"model": model_name}
+    )
+    worker_addr = ret.json()["address"]
+    logger.info(f"Completion req model_name: {model_name}, worker_addr: {worker_addr}")
+
+    # Handle no available worker
+    if worker_addr == "":
+        yield (
+            SERVER_ERROR_MSG,
+            enable_btn,
+            enable_btn,
+            enable_btn,
+        )
+        return
+
+    # Now let's use the worker for completions
+    # completion_stream_iter = await model_worker_completion_stream_iter(
+    #     model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+    # )
+
+    try:
+        async for data in model_worker_completion_stream_iter(
+            model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+        ):
+            if data["error_code"] == 0:
+                output = data["text"].strip()
+                yield (output, disable_btn, disable_btn, disable_btn)
+            else:
+                output = data["text"] + f"\n\n(error_code: {data['error_code']})"
+                yield (output, enable_btn, enable_btn, enable_btn)
+                return
+    except requests.exceptions.RequestException as e:
+        output = (
+            f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_REQUEST_ERROR}, {e})"
+        )
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+    except Exception as e:
+        output = f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_STREAM_UNKNOWN_ERROR}, {e})"
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+
+    yield (output, enable_btn, enable_btn, enable_btn)
+
+    return
+
+
+def build_completion_mode_ui(models, add_promotion_links=False):
+    promotion = (
+        """
+- Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality. [[Blog]](https://lmsys.org/blog/2023-03-30-vicuna/)
+- | [GitHub](https://github.com/lm-sys/FastChat) | [Twitter](https://twitter.com/lmsysorg) | [Discord](https://discord.gg/HSWAKCrnFx) |
+"""
+        if add_promotion_links
+        else ""
+    )
+
+    # TODO: change this terms of use
+    notice_markdown = f"""
+# 🏔️ Completion with Open Large Language Models and bigdl-llm support
+{promotion}
+
+### Terms of use
+By using this service, users are required to agree to the following terms: The service is a research preview intended for non-commercial use only. It only provides limited safety measures and may generate offensive content. It must not be used for any illegal, harmful, violent, racist, or sexual purposes. **The service collects user dialogue data and reserves the right to distribute it under a Creative Commons Attribution (CC-BY) license.**
+
+### Choose a model to chat with
+"""
+
+    model_description_md = get_model_description_md(models)
+    gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
+
+    with gr.Row(elem_id="model_selector_row"):
+        model_selector = gr.Dropdown(
+            choices=models,
+            value=models[0] if len(models) > 0 else "",
+            interactive=True,
+            show_label=False,
+            container=False,
+        )
+
+    # Response box for completion
+    response_textbox = gr.Textbox(
+        show_label=True,
+        label="Response",
+        height=400,
+        visible=False,
+    )
+
+    # Let user enter prompt and place the send button
+    with gr.Row():
+        with gr.Column(scale=15):
+            input_textbox = gr.Textbox(
+                show_label=False,
+                placeholder="Enter text and press ENTER",
+                visible=False,
+                container=False,
+            )
+        with gr.Column(scale=1, min_width=50):
+            send_btn = gr.Button(value="Send", visible=False)
+    with gr.Row() as button_row:
+        regenerate_btn = gr.Button(value="🔄  Regenerate", interactive=False)
+        clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
+
+    btn_list = [regenerate_btn, clear_btn]
+    with gr.Accordion("Parameters", open=False, visible=True) as parameter_row:
+        temperature = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.7,
+            step=0.1,
+            interactive=True,
+            label="Temperature",
+        )
+        top_p = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            step=0.1,
+            interactive=True,
+            label="Top P",
+        )
+        max_output_tokens = gr.Slider(
+            minimum=16,
+            maximum=1024,
+            value=512,
+            step=64,
+            interactive=True,
+            label="Max output tokens",
+        )
+
+    model_selector.change(
+        clear_completion_history, None, [input_textbox, response_textbox] + btn_list
+    )
+    clear_btn.click(
+        clear_completion_history, None, [input_textbox, response_textbox] + btn_list
+    )
+    input_textbox.submit(
+        bot_completion,
+        [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    regenerate_btn.click(
+        bot_completion,
+        [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    send_btn.click(
+        bot_completion,
+        [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    return (
+        model_selector,
+        response_textbox,
+        input_textbox,
+        send_btn,
+        button_row,
+        parameter_row,
+    )
+
 
 def build_single_model_ui(models, add_promotion_links=False):
     promotion = (
@@ -677,41 +985,136 @@ By using this service, users are required to agree to the following terms: The s
 
     return state, model_selector, chatbot, textbox, send_btn, button_row, parameter_row
 
+def build_attestation_ui(models):
+    with gr.Accordion(label="Remote Attestation", elem_id="attestation_panel", open=True) as remote_attestation_app:
+        with gr.Row().style(equal_height=True):
+            # with gr.Column(scale=0.4, min_width=0):
+            #     tee_status = gr.Text(label="TEE Status", value="TDX enabled")
+            with gr.Column(scale=0.1, min_width=0):
+                user_data = gr.Textbox("",
+                                show_label=True,
+                                label="User Data").style(container=True)
+            with gr.Column(scale=0.1, min_width=0):
+                quote_timestamp = gr.Textbox("",
+                                show_label=True,
+                                label="Timestamp").style(container=True)
+            with gr.Column(scale=0.7, min_width=0):
+                quote = gr.Textbox(label="Quote (BASE64 formatted)", placeholder="Unknown", max_lines=1).style(container=True, show_copy_button=True)
+            with gr.Column(scale=0.1, min_width=0):
+                attest_btn = gr.Button("Generate Quote").style(container=True)
+
+
+        with gr.Row():
+            gr.Markdown("<small> <em> The Quote Generation will use SHA-256 Hash of User Data concatted with Timestamp as the report data. </em> </small>")
+
+        with gr.Accordion(label="Quote Details:", open=True):
+            quote_df = gr.Dataframe(
+                headers=["role", "status", "quote"],
+                datatype=["str", "str", "str"],
+                value=[["","",""]],
+                col_count=(3, "fixed"),
+                interactive=False,
+            )
+
+        with gr.Row():
+            as_url = gr.Textbox("",
+                                show_label=True,
+                                label="Attestation Service URL").style(container=True)
+            as_app_id = gr.Textbox("",
+                                show_label=True,
+                                label="Attestation App ID").style(container=True)
+            as_api_key = gr.Textbox("",
+                                show_label=True,
+                                type="password",
+                                label="Attestation Api Key").style(container=True)
+            with gr.Column(scale=0.2, min_width=0):
+                verify_btn = gr.Button("Attest with AS").style(container=True)
+            # with gr.Column(scale=0.1, min_width=0):
+            # verify_btn = gr.Button("Verify")
+
+    attest_btn.click(attest, [user_data], [quote, quote_df, quote_timestamp], queue=False)
+    verify_btn.click(verify, [as_url, as_app_id, as_api_key, quote_df], [quote_df], queue=False)
 
 def build_demo(models):
-    with gr.Blocks(
-        title="Chat with Open Large Language Models",
-        theme=gr.themes.Base(),
-        css=block_css,
-    ) as demo:
-        url_params = gr.JSON(visible=False)
+    with gr.Blocks() as demo:
+        with gr.Tab("Chat"):
+            with gr.Blocks(
+                title="Chat with Open Large Language Models",
+                theme=gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
 
-        (
-            state,
-            model_selector,
-            chatbot,
-            textbox,
-            send_btn,
-            button_row,
-            parameter_row,
-        ) = build_single_model_ui(models)
+                (
+                    state,
+                    model_selector,
+                    chatbot,
+                    textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_single_model_ui(models)
 
-        if args.model_list_mode not in ["once", "reload"]:
-            raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
-        demo.load(
-            load_demo,
-            [url_params],
-            [
-                state,
-                model_selector,
-                chatbot,
-                textbox,
-                send_btn,
-                button_row,
-                parameter_row,
-            ],
-            _js=get_window_url_params_js,
-        )
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+                demo.load(
+                    load_demo,
+                    [url_params],
+                    [
+                        state,
+                        model_selector,
+                        chatbot,
+                        textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
+
+        with gr.Tab("Completion"):
+            with gr.Blocks(
+                title="Completion using Large language Models",
+                theme=gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
+
+                (
+                    model_selector,
+                    response_textbox,
+                    input_textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_completion_mode_ui(models)
+
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+
+                demo.load(
+                    load_demo_completion,
+                    [url_params],
+                    [
+                        model_selector,
+                        response_textbox,
+                        input_textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
+
+        if enable_attest:
+            with gr.Tab("Attestation"):
+                with gr.Blocks(
+                    title="Remote Attestation",
+                    theme=gr.themes.Base(),
+                    css=block_css,
+                ):
+                    url_params = gr.JSON(visible=False)
+                    build_attestation_ui(models)
 
     return demo
 
@@ -772,6 +1175,11 @@ if __name__ == "__main__":
         type=str,
         help='Set the gradio authentication file path. The file should contain one or more user:password pairs in this format: "u1:p1,u2:p2,u3:p3"',
     )
+    parser.add_argument(
+        "--attest",
+        action="store_true",
+        help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
@@ -784,6 +1192,7 @@ if __name__ == "__main__":
         args.add_claude,
         args.add_palm,
     )
+    enable_attest = args.attest
 
     # Set authorization credentials
     auth = None

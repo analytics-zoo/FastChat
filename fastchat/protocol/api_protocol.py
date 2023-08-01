@@ -166,3 +166,17 @@ class CompletionStreamResponse(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str
     choices: List[CompletionResponseStreamChoice]
+
+
+class BigDLAttestationRequest(BaseModel):
+    userdata: str
+
+
+class BigDLAttestationResponseItem(BaseModel):
+    role: str
+    quote: str
+
+
+class BigDLAttestationResponse(BaseModel):
+    message: str
+    quote_list: List[BigDLAttestationResponseItem]

@@ -29,6 +29,9 @@ from transformers.generation.logits_process import (
     TopPLogitsWarper,
 )
 
+import numpy as np
+import os
+
 from fastchat.conversation import get_conv_template, SeparatorStyle
 from fastchat.model.model_adapter import (
     load_model,
@@ -108,7 +111,14 @@ def generate_stream(
 
     past_key_values = out = None
     sent_interrupt = False
+
+    first_token_time = None
+    rest_token_time = []
+    enable_perf_output = os.environ.get("ENABLE_PERF_OUTPUT") == "true"
+
     for i in range(max_new_tokens):
+        if enable_perf_output:
+            st_timestamp = time.perf_counter()
         if i == 0:  # prefill
             if model.config.is_encoder_decoder:
                 out = model.decoder(
@@ -176,6 +186,12 @@ def generate_stream(
         else:
             stopped = False
 
+        if enable_perf_output:
+            end_timestamp = time.perf_counter()
+            if first_token_time is None:
+                first_token_time = end_timestamp - st_timestamp
+            else:
+                rest_token_time.append(end_timestamp - st_timestamp)
         # Yield the output tokens
         if i % stream_interval == 0 or i == max_new_tokens - 1 or stopped:
             if echo:
@@ -226,16 +242,28 @@ def generate_stream(
 
             # Prevent yielding partial stop sequence
             if not partially_stopped:
-                yield {
-                    "text": output,
-                    "usage": {
-                        "prompt_tokens": input_echo_len,
-                        "completion_tokens": i,
-                        "total_tokens": input_echo_len + i,
-                    },
-                    "finish_reason": None,
-                }
-
+                if enable_perf_output:
+                    yield {
+                        "text": output,
+                        "usage": {
+                            "prompt_tokens": input_echo_len,
+                            "completion_tokens": i,
+                            "total_tokens": input_echo_len + i,
+                        },
+                        "finish_reason": None,
+                        "first_token_time": first_token_time,
+                        "rest_token_time": np.mean(rest_token_time),
+                    }
+                else:
+                    yield {
+                        "text": output,
+                        "usage": {
+                            "prompt_tokens": input_echo_len,
+                            "completion_tokens": i,
+                            "total_tokens": input_echo_len + i,
+                        },
+                        "finish_reason": None,
+                    }
         if stopped:
             break
 
@@ -247,15 +275,28 @@ def generate_stream(
     else:
         finish_reason = None
 
-    yield {
-        "text": output,
-        "usage": {
-            "prompt_tokens": input_echo_len,
-            "completion_tokens": i,
-            "total_tokens": input_echo_len + i,
-        },
-        "finish_reason": finish_reason,
-    }
+    if enable_perf_output:
+        yield {
+            "text": output,
+            "usage": {
+                "prompt_tokens": input_echo_len,
+                "completion_tokens": i,
+                "total_tokens": input_echo_len + i,
+            },
+            "finish_reason": finish_reason,
+            "first_token_time": first_token_time,
+            "rest_token_time": np.mean(rest_token_time),
+        }
+    else:
+        yield {
+            "text": output,
+            "usage": {
+                "prompt_tokens": input_echo_len,
+                "completion_tokens": i,
+                "total_tokens": input_echo_len + i,
+            },
+            "finish_reason": finish_reason,
+        }
 
     # Clean
     del past_key_values, out

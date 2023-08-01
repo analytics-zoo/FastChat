@@ -447,6 +447,44 @@ def remove_parent_directory_name(model_path):
 
 peft_model_cache = {}
 
+class BigDLLLMAdapter(BaseModelAdapter):
+    "Model adapater for bigdl-llm backend models"
+
+    def match(self, model_path: str):
+        return "bigdl" in model_path
+
+    def load_model(self, model_path: str, from_pretrained_kwargs: dict):
+        revision = from_pretrained_kwargs.get("revision", "main")
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_path, use_fast=False, revision=revision
+        )
+        from bigdl.llm.transformers import AutoModelForCausalLM
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            load_in_4bit=True,
+            low_cpu_mem_usage=True,
+            **from_pretrained_kwargs,
+        )
+        return model, tokenizer
+
+    def get_default_conv_template(self, model_path: str) -> Conversation:
+        """Uses the conv template defined in environment var"""
+        import os
+
+        if "BIGDL_CONV_TEMPLATE" in os.environ:
+            try:
+                conv = get_conv_template(os.environ["BIGDL_CONV_TEMPLATE"])
+            except KeyError:
+                warnings.warn(
+                    f"The conversation template {os.environ['BIGDL_CONV_TEMPLATE']} does not exist, default to ONE_SHOT template"
+                )
+                conv = get_conv_template("one_shot")
+                return conv
+            else:
+                return conv
+        else:
+            return get_conv_template("one_shot")
 
 class PeftModelAdapter:
     """Loads any "peft" model and it's base model."""
@@ -503,7 +541,12 @@ class PeftModelAdapter:
         base_model, tokenizer = base_adapter.load_model(
             base_model_path, from_pretrained_kwargs
         )
-        model = PeftModel.from_pretrained(base_model, model_path)
+        # cast PeftModel to native transformers with the same type of base model
+        model = PeftModel.from_pretrained(base_model, model_path).merge_and_unload()
+        from bigdl.llm import optimize_model
+        model = optimize_model(model, low_bit="sym_int4", optimize_llm=True)
+        print("[INFO] Using BigDL Optimized Peft Model...")
+
         return model, tokenizer
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
@@ -684,8 +727,13 @@ class ChatGLMAdapter(BaseModelAdapter):
         tokenizer = AutoTokenizer.from_pretrained(
             model_path, trust_remote_code=True, revision=revision
         )
+        from bigdl.llm.transformers import AutoModel
+
         model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=True, **from_pretrained_kwargs
+            model_path,
+            trust_remote_code=True,
+            load_in_4bit=True,
+            **from_pretrained_kwargs,
         )
         return model, tokenizer
 
@@ -1586,6 +1634,7 @@ class CodeLlamaAdapter(BaseModelAdapter):
 
 # Note: the registration order matters.
 # The one registered earlier has a higher matching priority.
+register_model_adapter(BigDLLLMAdapter)
 register_model_adapter(PeftModelAdapter)
 register_model_adapter(VicunaAdapter)
 register_model_adapter(AiroborosAdapter)

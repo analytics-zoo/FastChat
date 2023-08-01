@@ -18,6 +18,8 @@ import numpy as np
 import requests
 import uvicorn
 
+import base64
+
 from fastchat.constants import (
     CONTROLLER_HEART_BEAT_EXPIRATION,
     WORKER_API_TIMEOUT,
@@ -28,6 +30,7 @@ from fastchat.utils import build_logger
 
 
 logger = build_logger("controller", "controller.log")
+enable_attest = False
 
 
 class DispatchMethod(Enum):
@@ -254,6 +257,32 @@ class Controller:
         except requests.exceptions.RequestException as e:
             yield self.handle_worker_timeout(worker_addr)
 
+    def bigdl_quote_generation(self, userdata):
+        if not enable_attest:
+            return {"quote": "Attestation not enabled"}
+        try:
+            from bigdl.ppml.attestation import quote_generator
+
+            quote_b = quote_generator.generate_tdx_quote(userdata)
+            quote = base64.b64encode(quote_b).decode("utf-8")
+            return {"quote": quote}
+        except Exception as e:
+            return {"quote": "quote generation failed: %s" % (e)}
+
+    def bigdl_attest_workers(self, userdata):
+        ret = []
+        for w_name, w_info in self.worker_info.items():
+            try:
+                response = requests.post(
+                    w_name + "/attest",
+                    json={"userdata": userdata},
+                    timeout=WORKER_API_TIMEOUT,
+                )
+                ret.append((w_name, response.json()["quote"]))
+            except Exception as e:
+                ret.append((w_name, "quote generation failed: %s" % (e)))
+        return {"quote_list": dict(ret)}
+
 
 app = FastAPI()
 
@@ -307,6 +336,17 @@ async def worker_api_get_status(request: Request):
 async def worker_api_get_status(request: Request):
     return "success"
 
+@app.post("/attest")
+async def attest(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return controller.bigdl_quote_generation(userdata)
+
+@app.post("/attest_workers")
+async def attest_workers(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return controller.bigdl_attest_workers(userdata)
 
 def create_controller():
     parser = argparse.ArgumentParser()
@@ -318,13 +358,47 @@ def create_controller():
         choices=["lottery", "shortest_queue"],
         default="shortest_queue",
     )
+    parser.add_argument(
+        "--enable-tls",
+        action="store_true",
+        help="enable tls",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        type=str,
+        help="certificate path used for tls verification",
+        default="",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        type=str,
+        help="server key path used for tls verification",
+        default="",
+    )
+    parser.add_argument(
+        "--attest", action="store_true", help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
+    global enable_attest
+
+    enable_attest = args.attest
     controller = Controller(args.dispatch_method)
     return args, controller
 
 
 if __name__ == "__main__":
     args, controller = create_controller()
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.enable_tls:
+        # TODO: this may cause error if certfile and keyfile are not available
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            ssl_certfile=args.ssl_certfile,
+            ssl_keyfile=args.ssl_keyfile,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
