@@ -323,6 +323,28 @@ def remove_parent_directory_name(model_path):
     return model_path.split("/")[-1]
 
 
+class BigDLLLMAdapter(BaseModelAdapter):
+    "Model adapater for bigdl-llm backend models"
+
+    def match(self, model_path: str):
+        return "bigdl" in model_path
+
+    def load_model(self, model_path: str, from_pretrained_kwargs: dict):
+        revision = from_pretrained_kwargs.get("revision", "main")
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_path, use_fast=False, revision=revision
+        )
+        from bigdl.llm.transformers import AutoModelForCausalLM
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            load_in_4bit=True,
+            low_cpu_mem_usage=True,
+             **from_pretrained_kwargs,
+        )
+        return model, tokenizer
+
+
+
 class PeftModelAdapter:
     """Loads any "peft" model and it's base model."""
 
@@ -447,7 +469,7 @@ class CodeT5pAdapter(BaseModelAdapter):
             model_path,
             low_cpu_mem_usage=True,
             trust_remote_code=True,
-            **from_pretrained_kwargs,
+            **from_pretrained_kwargs
         )
         return model, tokenizer
 
@@ -502,8 +524,9 @@ class ChatGLMAdapter(BaseModelAdapter):
         tokenizer = AutoTokenizer.from_pretrained(
             model_path, trust_remote_code=True, revision=revision
         )
+        from bigdl.llm.transformers import AutoModel
         model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=True, **from_pretrained_kwargs
+            model_path, trust_remote_code=True, load_in_4_bit=True, **from_pretrained_kwargs
         )
         return model, tokenizer
 
@@ -983,6 +1006,7 @@ class XGenAdapter(BaseModelAdapter):
 
 # Note: the registration order matters.
 # The one registered earlier has a higher matching priority.
+register_model_adapter(BigDLLLMAdapter)
 register_model_adapter(PeftModelAdapter)
 register_model_adapter(VicunaAdapter)
 register_model_adapter(LongChatAdapter)
