@@ -41,6 +41,7 @@ from fastchat.utils import (
     get_window_url_params_js,
     parse_gradio_auth_creds,
 )
+from fastchat.serve.openai_api_server import get_gen_params
 
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
@@ -144,6 +145,27 @@ def get_model_list(
     return models
 
 
+def load_demo_single_comp(models, url_params):
+    selected_model = models[0] if len(models) > 0 else ""
+    if "model" in url_params:
+        model = url_params["model"]
+        if model in models:
+            selected_model = model
+
+    dropdown_update = gr.Dropdown.update(
+        choices=models, value=selected_model, visible=True
+    )
+
+    return (
+        dropdown_update,
+        gr.Chatbot.update(visible=True),
+        gr.Textbox.update(visible=True),
+        gr.Button.update(visible=True),
+        gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True),
+    )
+
+
 def load_demo_single(models, url_params):
     selected_model = models[0] if len(models) > 0 else ""
     if "model" in url_params:
@@ -165,6 +187,21 @@ def load_demo_single(models, url_params):
         gr.Row.update(visible=True),
         gr.Accordion.update(visible=True),
     )
+
+
+def load_demo_completion(url_params, request: gr.Request):
+    global models
+
+    ip = request.client.host
+    logger.info(f"load_demo_completion. ip: {ip}. params: {url_params}")
+    ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
+
+    if args.model_list_mode == "reload":
+        models = get_model_list(
+            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+        )
+
+    return load_demo_single_comp(models, url_params)
 
 
 def load_demo(url_params, request: gr.Request):
@@ -228,6 +265,10 @@ def clear_history(request: gr.Request):
     return (state, [], "") + (disable_btn,) * 5
 
 
+def clear_completion_history(request: gr.Request):
+    return ("", "") + (disable_btn,) * 2
+
+
 def add_text(state, model_selector, text, request: gr.Request):
     ip = request.client.host
     logger.info(f"add_text. ip: {ip}. len: {len(text)}")
@@ -276,6 +317,46 @@ def post_process_code(code):
                 blocks[i] = blocks[i].replace("\\_", "_")
         code = sep.join(blocks)
     return code
+
+
+async def model_worker_completion_stream_iter(
+    model_name,
+    worker_addr,
+    message,
+    temperature,
+    top_p,
+    max_new_tokens,
+):
+    # Generate generate params
+    gen_params = await get_gen_params(
+        model_name,
+        worker_addr,
+        message,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_new_tokens,
+        echo=False,
+        stream=True,
+        stop=None,
+    )
+
+    # Print a log
+    logger.info(f"==== request ====\n{gen_params}")
+
+    # Send the request to the worker, and get response
+    response = requests.post(
+        worker_addr + "/worker_generate_stream",
+        headers=headers,
+        json=gen_params,
+        stream=True,
+        timeout=WORKER_API_TIMEOUT,
+    )
+    print(response)
+    # Handle the response, and decode the result
+    for chunk in response.iter_lines(decode_unicode=False, delimiter=b"\0"):
+        if chunk:
+            data = json.loads(chunk.decode())
+            yield data
 
 
 def model_worker_stream_iter(
@@ -527,6 +608,182 @@ def get_model_description_md(models):
     return model_description_md
 
 
+# Return button states
+async def bot_completion(
+    msg, model_name, temperature, top_p, max_new_tokens, request: gr.Request
+):
+    logger.info(f"bot_completion. ip: {request.client.host}")
+    temperature = float(temperature)
+    top_p = float(top_p)
+    max_new_tokens = int(max_new_tokens)
+
+    ret = requests.post(
+        controller_url + "/get_worker_address", json={"model": model_name}
+    )
+    worker_addr = ret.json()["address"]
+    logger.info(f"Completion req model_name: {model_name}, worker_addr: {worker_addr}")
+
+    # Handle no available worker
+    if worker_addr == "":
+        yield (
+            SERVER_ERROR_MSG,
+            enable_btn,
+            enable_btn,
+            enable_btn,
+        )
+        return
+
+    # Now let's use the worker for completions
+    # completion_stream_iter = await model_worker_completion_stream_iter(
+    #     model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+    # )
+
+    try:
+        async for data in model_worker_completion_stream_iter(
+            model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+        ):
+            if data["error_code"] == 0:
+                output = data["text"].strip()
+                yield (output, disable_btn, disable_btn, disable_btn)
+            else:
+                output = data["text"] + f"\n\n(error_code: {data['error_code']})"
+                yield (output, enable_btn, enable_btn, enable_btn)
+                return
+    except requests.exceptions.RequestException as e:
+        output = (
+            f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_REQUEST_ERROR}, {e})"
+        )
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+    except Exception as e:
+        output = f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_STREAM_UNKNOWN_ERROR}, {e})"
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+
+    yield (output, enable_btn, enable_btn, enable_btn)
+
+    return
+
+
+def build_completion_mode_ui(models, add_promotion_links=False):
+    promotion = (
+        """
+- Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality. [[Blog]](https://lmsys.org/blog/2023-03-30-vicuna/)
+- | [GitHub](https://github.com/lm-sys/FastChat) | [Twitter](https://twitter.com/lmsysorg) | [Discord](https://discord.gg/HSWAKCrnFx) |
+"""
+        if add_promotion_links
+        else ""
+    )
+
+    # TODO: change this terms of use
+    notice_markdown = f"""
+# 🏔️ Completion with Open Large Language Models and bigdl-llm support
+{promotion}
+
+### Terms of use
+By using this service, users are required to agree to the following terms: The service is a research preview intended for non-commercial use only. It only provides limited safety measures and may generate offensive content. It must not be used for any illegal, harmful, violent, racist, or sexual purposes. **The service collects user dialogue data and reserves the right to distribute it under a Creative Commons Attribution (CC-BY) license.**
+
+### Choose a model to chat with
+"""
+
+    model_description_md = get_model_description_md(models)
+    gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
+
+    with gr.Row(elem_id="model_selector_row"):
+        model_selector = gr.Dropdown(
+            choices=models,
+            value=models[0] if len(models) > 0 else "",
+            interactive=True,
+            show_label=False,
+            container=False,
+        )
+
+    # Response box for completion
+    response_textbox = gr.Textbox(
+        show_label=True,
+        label="Response",
+        height=400,
+        visible=False,
+    )
+
+    # Let user enter prompt and place the send button
+    with gr.Row():
+        with gr.Column(scale=15):
+            input_textbox = gr.Textbox(
+                show_label=False,
+                placeholder="Enter text and press ENTER",
+                visible=False,
+                container=False,
+            )
+        with gr.Column(scale=1, min_width=50):
+            send_btn = gr.Button(value="Send", visible=False)
+    with gr.Row() as button_row:
+        regenerate_btn = gr.Button(value="🔄  Regenerate", interactive=False)
+        clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
+
+    btn_list = [regenerate_btn, clear_btn]
+    with gr.Accordion("Parameters", open=False, visible=True) as parameter_row:
+        temperature = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.7,
+            step=0.1,
+            interactive=True,
+            label="Temperature",
+        )
+        top_p = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            step=0.1,
+            interactive=True,
+            label="Top P",
+        )
+        max_output_tokens = gr.Slider(
+            minimum=16,
+            maximum=1024,
+            value=512,
+            step=64,
+            interactive=True,
+            label="Max output tokens",
+        )
+
+    model_selector.change(
+        clear_completion_history, None, [input_textbox, response_textbox] + btn_list
+    )
+    clear_btn.click(
+        clear_completion_history, None, [input_textbox, response_textbox] + btn_list
+    )
+    input_textbox.submit(
+        bot_completion,
+        [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    regenerate_btn.click(
+        bot_completion,
+        [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    send_btn.click(
+        bot_completion,
+        [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    return (
+        model_selector,
+        response_textbox,
+        input_textbox,
+        send_btn,
+        button_row,
+        parameter_row,
+    )
+
+
 def build_single_model_ui(models, add_promotion_links=False):
     promotion = (
         """
@@ -658,39 +915,78 @@ By using this service, users are required to agree to the following terms: The s
 
 
 def build_demo(models):
-    with gr.Blocks(
-        title="Chat with Open Large Language Models",
-        theme=gr.themes.Base(),
-        css=block_css,
-    ) as demo:
-        url_params = gr.JSON(visible=False)
+    with gr.Blocks() as demo:
+        with gr.Tab("Chat"):
+            with gr.Blocks(
+                title="Chat with Open Large Language Models",
+                theme=gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
 
-        (
-            state,
-            model_selector,
-            chatbot,
-            textbox,
-            send_btn,
-            button_row,
-            parameter_row,
-        ) = build_single_model_ui(models)
+                (
+                    state,
+                    model_selector,
+                    chatbot,
+                    textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_single_model_ui(models)
 
-        if args.model_list_mode not in ["once", "reload"]:
-            raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
-        demo.load(
-            load_demo,
-            [url_params],
-            [
-                state,
-                model_selector,
-                chatbot,
-                textbox,
-                send_btn,
-                button_row,
-                parameter_row,
-            ],
-            _js=get_window_url_params_js,
-        )
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+                demo.load(
+                    load_demo,
+                    [url_params],
+                    [
+                        state,
+                        model_selector,
+                        chatbot,
+                        textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
+
+        with gr.Tab("Completion"):
+            with gr.Blocks(
+                title="Completion using Large language Models",
+                theme=gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
+
+                (
+                    model_selector,
+                    response_textbox,
+                    input_textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_completion_mode_ui(models)
+
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+
+                demo.load(
+                    load_demo_completion,
+                    [url_params],
+                    [
+                        model_selector,
+                        response_textbox,
+                        input_textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
+
+        with gr.Tab("Attestation"):
+            pass
 
     return demo
 

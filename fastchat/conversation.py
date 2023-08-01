@@ -986,6 +986,20 @@ register_conv_template(
     )
 )
 
+# A template used for pure test purpose, similar to the "zero_shot" template above but remove the system prompt.
+register_conv_template(
+    Conversation(
+        name="zero_shot_no_sys",
+        system="",
+        roles=("Human", "Assistant"),
+        messages=(),
+        offset=0,
+        sep_style=SeparatorStyle.ADD_COLON_SINGLE,
+        sep="\n### ",
+        stop_str="###",
+    )
+)
+
 
 if __name__ == "__main__":
     print("Vicuna template:")
