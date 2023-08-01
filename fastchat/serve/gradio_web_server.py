@@ -319,7 +319,8 @@ def bot_response(state, temperature, top_p, max_new_tokens, request: gr.Request)
     else:
         # Query worker address
         ret = requests.post(
-            controller_url + "/get_worker_address", json={"model": model_name}
+            controller_url + "/get_worker_address",
+            json={"model": model_name, "update_queue": False},
         )
         worker_addr = ret.json()["address"]
         logger.info(f"model_name: {model_name}, worker_addr: {worker_addr}")

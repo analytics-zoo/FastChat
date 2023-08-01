@@ -21,7 +21,8 @@ def main():
         print(f"Models: {models}")
 
         ret = requests.post(
-            controller_addr + "/get_worker_address", json={"model": args.model_name}
+            controller_addr + "/get_worker_address",
+            json={"model": args.model_name, "update_queue": True},
         )
         worker_addr = ret.json()["address"]
         print(f"worker_addr: {worker_addr}")
@@ -49,7 +50,8 @@ def main():
     def send_request(results, i):
         if args.test_dispatch:
             ret = requests.post(
-                controller_addr + "/get_worker_address", json={"model": args.model_name}
+                controller_addr + "/get_worker_address",
+                json={"model": args.model_name, "update_queue": True},
             )
             thread_worker_addr = ret.json()["address"]
         else:
