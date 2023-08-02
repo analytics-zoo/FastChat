@@ -423,8 +423,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--stream-interval", type=int, default=2)
     parser.add_argument("--no-register", action="store_true")
+    parser.add_argument("--attest", type=bool, default=False, help="whether enable attesation")
     args = parser.parse_args()
     logger.info(f"args: {args}")
+    
+    enable_attest = args.attest
 
     if args.gpus:
         if len(args.gpus.split(",")) < args.num_gpus:
