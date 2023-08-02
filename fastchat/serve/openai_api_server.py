@@ -783,8 +783,8 @@ async def bigdl_quote_generation(request: BigDLQuoteGenerationRequest):
     quote = base64.b64encode(quote_b).decode('utf-8')
     quote_list.append(
         BigDLAttestationResponseChoice(
-            role: "openai_api_server",
-            quote: quote
+            role="openai_api_server",
+            quote=quote
         )
     )
     
