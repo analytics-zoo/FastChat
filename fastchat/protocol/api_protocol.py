@@ -170,10 +170,10 @@ class CompletionStreamResponse(BaseModel):
 class BigDLAttestationRequest(BaseModel):
     userdata: str
 
-class BigDLAttestationResponseChoice(BaseModel):
+class BigDLAttestationResponseItem(BaseModel):
     role: str
     quote: str
 
 class BigDLAttestationResponse(BaseModel):
     message: str
-    quote_list: List[BigDLAttestationResponseChoice]
+    quote_list: List[BigDLAttestationResponseItem]

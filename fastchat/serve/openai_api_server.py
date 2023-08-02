@@ -64,6 +64,11 @@ from fastchat.protocol.api_protocol import (
     APITokenCheckResponse,
     APITokenCheckResponseItem,
 )
+from fastchat.protocol.api_protocol import (
+    BigDLAttestationRequest,
+    BigDLAttestationResponseItem,
+    BigDLAttestationResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -775,14 +780,14 @@ async def create_chat_completion(request: APIChatCompletionRequest):
 @app.post("/api/v1/attest")
 async def bigdl_quote_generation(request: BigDLAttestationRequest):
     if not enable_attest:
-         return BigDLAttestationResponse(message="Attestation not enabled", quote_list=None)
+         return BigDLAttestationResponse(message="Attestation not enabled", quote_list=[])
     
     userdata = request.userdata
     quote_list = []
     quote_b = quote_generator.generate_tdx_quote(userdata)
     quote = base64.b64encode(quote_b).decode('utf-8')
     quote_list.append(
-        BigDLAttestationResponseChoice(
+        BigDLAttestationResponseItem(
             role="openai_api_server",
             quote=quote
         )
@@ -794,7 +799,7 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
         )
         quote_ret = ret.json()["quote"]
         quote_list.append(
-            BigDLAttestationResponseChoice(
+            BigDLAttestationResponseItem(
                 role="controller",
                 quote=quote_ret
             )
@@ -806,7 +811,7 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
         workers_quote_ret = ret.json()["quote_list"]
         for worker_name, worker_quote in workers_quote_ret.items():
             quote_list.append(
-                BigDLAttestationResponseChoice(
+                BigDLAttestationResponseItem(
                     role="worker-%s"%worker_name,
                     quote=worker_quote
                 )
