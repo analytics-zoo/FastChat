@@ -273,7 +273,7 @@ class Controller:
                 ret=ret.append((w_name, response.json()["quote"]))
             except exceptions as e:
                 ret=ret.append((w_name, "quote generation failed: %s"%(e)))
-        return {"quote_list": ret.dict()}
+        return {"quote_list": dict(ret)}
 
 app = FastAPI()
 
