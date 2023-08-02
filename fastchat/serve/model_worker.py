@@ -94,9 +94,14 @@ class BaseModelWorker:
         self.heart_beat_thread.start()
 
     def bigdl_quote_generation(self, userdata):
-        quote_b = quote_generator.generate_tdx_quote(userdata)
-        quote = base64.b64encode(quote_b).decode('utf-8')
-        return {"quote": quote}
+        if not enable_attest:
+            return {"quote": "Attestation not enabled"}
+        try:
+            quote_b = quote_generator.generate_tdx_quote(userdata)
+            quote = base64.b64encode(quote_b).decode('utf-8')
+            return {"quote": quote}
+        except Exception as e:
+            return {"quote": "quote generation failed: %s"%(e)}
     
     def register_to_controller(self):
         logger.info("Register to controller")

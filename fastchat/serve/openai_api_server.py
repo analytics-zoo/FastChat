@@ -804,7 +804,7 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
                 quote=quote_ret
             )
         )
-
+        ret = await client.post(controller_address + "/refresh_all_workers")
         ret = await client.post(
             controller_address + "/attest_workers", json={"userdata": userdata}
         )
