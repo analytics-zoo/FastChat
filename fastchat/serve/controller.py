@@ -271,7 +271,7 @@ class Controller:
                     timeout=WORKER_API_TIMEOUT,
                 )
                 ret=ret.append((w_name, response.json()["quote"]))
-            except exceptions as e:
+            except Exception as e:
                 ret=ret.append((w_name, "quote generation failed: %s"%(e)))
         return {"quote_list": dict(ret)}
 
