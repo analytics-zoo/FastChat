@@ -168,7 +168,6 @@ class CompletionStreamResponse(BaseModel):
     choices: List[CompletionResponseStreamChoice]
 
 class BigDLAttestationRequest(BaseModel):
-    model: str
     userdata: str
 
 class BigDLAttestationResponseChoice(BaseModel):

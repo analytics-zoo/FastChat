@@ -773,7 +773,7 @@ async def create_chat_completion(request: APIChatCompletionRequest):
 ### END GENERAL API - NOT OPENAI COMPATIBLE ###
 
 @app.post("/api/v1/attest")
-async def bigdl_quote_generation(request: BigDLQuoteGenerationRequest):
+async def bigdl_quote_generation(request: BigDLAttestationRequest):
     if not enable_attest:
          return BigDLAttestationResponse(message="Attestation not enabled", quote_list=None)
     
