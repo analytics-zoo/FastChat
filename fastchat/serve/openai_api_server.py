@@ -787,18 +787,30 @@ async def bigdl_quote_generation(request: BigDLQuoteGenerationRequest):
             quote=quote
         )
     )
-    
-    controller_address = app_settings.controller_address
-    ret = await client.post(
-        controller_address + "/attest"
-    )
-    quote_ret = ret.json()["quote"]
-    quote_list.append(
-        BigDLAttestationResponseChoice(
-            role: "controller",
-            quote: quote_ret
+    async with httpx.AsyncClient() as client:
+        controller_address = app_settings.controller_address
+        ret = await client.post(
+            controller_address + "/attest"
         )
-    )
+        quote_ret = ret.json()["quote"]
+        quote_list.append(
+            BigDLAttestationResponseChoice(
+                role="controller",
+                quote=quote_ret
+            )
+        )
+
+        ret = await client.post(
+            controller_address + "/attest_workers"
+        )
+        workers_quote_ret = ret.json()["quote_list"]
+        for worker_name, worker_quote in workers_quote_ret.items():
+            quote_list.append(
+                BigDLAttestationResponseChoice(
+                    role="worker-%s"%worker_name,
+                    quote=worker_quote
+                )
+            )
 
     return BigDLAttestationResponse(message="Success", quote_list=quote_list)
 

@@ -261,6 +261,20 @@ class Controller:
         quote = base64.b64encode(quote_b).decode('utf-8')
         return {"quote": quote}
 
+    def bigdl_attest_workers(self, userdata):
+        ret = []
+        for w_name, w_info in self.worker_info.items():
+            try:
+                response = requests.post(
+                    w_name + "/attest",
+                    json={"userdata": userdata},
+                    timeout=WORKER_API_TIMEOUT,
+                )
+                ret=ret.append((w_name, response.json()["quote"]))
+            except exceptions as e:
+                ret=ret.append((w_name, "quote generation failed: %s"%(e)))
+        return {"quote_list": ret.dict()}
+
 app = FastAPI()
 
 
@@ -313,6 +327,12 @@ async def attest(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return controller.bigdl_quote_generation(userdata)
+
+@app.post("/attest_workers")
+async def attest_workers(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return controller.bigdl_attest_workers(userdata)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
