@@ -19,6 +19,7 @@ import requests
 import uvicorn
 
 from bigdl.ppml.attestation import quote_generator
+import base64
 
 from fastchat.constants import (
     CONTROLLER_HEART_BEAT_EXPIRATION,

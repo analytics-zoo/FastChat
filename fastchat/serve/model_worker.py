@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 import requests
 
 from bigdl.ppml.attestation import quote_generator
+import base64
 
 try:
     from transformers import (

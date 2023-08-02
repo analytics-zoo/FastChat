@@ -27,6 +27,7 @@ import tiktoken
 import uvicorn
 
 from bigdl.ppml.attestation import attestation_service, quote_generator
+import base64
 
 from fastchat.constants import (
     WORKER_API_TIMEOUT,
