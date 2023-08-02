@@ -258,7 +258,7 @@ class Controller:
 
     def bigdl_quote_generation(self, userdata):
         quote_b = quote_generator.generate_tdx_quote(userdata)
-        quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+        quote = base64.b64encode(quote_b).decode('utf-8')
         return {"quote": quote}
 
 app = FastAPI()

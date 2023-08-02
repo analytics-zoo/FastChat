@@ -95,7 +95,7 @@ class BaseModelWorker:
 
     def bigdl_quote_generation(self, userdata):
         quote_b = quote_generator.generate_tdx_quote(userdata)
-        quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+        quote = base64.b64encode(quote_b).decode('utf-8')
         return {"quote": quote}
     
     def register_to_controller(self):
@@ -108,8 +108,8 @@ class BaseModelWorker:
             "worker_status": self.get_status(),
         }
         if enable_attest:
-            quote_b = quote_generator.generate_tdx_quote(user_report_data)
-            quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+            quote_b = quote_generator.generate_tdx_quote("ppml")
+            quote = base64.b64encode(quote_b).decode('utf-8')
             data.update({"quote": quote})
         r = requests.post(url, json=data)
         assert r.status_code == 200
