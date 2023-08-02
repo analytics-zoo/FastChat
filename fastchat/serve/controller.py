@@ -276,9 +276,9 @@ class Controller:
                     json={"userdata": userdata},
                     timeout=WORKER_API_TIMEOUT,
                 )
-                ret=ret.append((w_name, response.json()["quote"]))
+                ret.append((w_name, response.json()["quote"]))
             except Exception as e:
-                ret=ret.append((w_name, "quote generation failed: %s"%(e)))
+                ret.append((w_name, "quote generation failed: %s"%(e)))
         return {"quote_list": dict(ret)}
 
 app = FastAPI()
