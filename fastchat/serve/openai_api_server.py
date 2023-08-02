@@ -787,14 +787,22 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
     
     userdata = request.userdata
     quote_list = []
-    quote_b = quote_generator.generate_tdx_quote(userdata)
-    quote = base64.b64encode(quote_b).decode('utf-8')
-    quote_list.append(
-        BigDLAttestationResponseItem(
-            role="openai_api_server",
-            quote=quote
+    try:
+        quote_b = quote_generator.generate_tdx_quote(userdata)
+        quote = base64.b64encode(quote_b).decode('utf-8')
+        quote_list.append(
+            BigDLAttestationResponseItem(
+                role="openai_api_server",
+                quote=quote
+            )
         )
-    )
+    except Exception as e:
+        quote_list.append(
+            BigDLAttestationResponseItem(
+                role="openai_api_server",
+                quote="quote generation failed: %s"%(e)
+            )
+        )
     async with httpx.AsyncClient() as client:
         controller_address = app_settings.controller_address
         ret = await client.post(
