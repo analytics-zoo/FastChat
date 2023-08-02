@@ -26,6 +26,8 @@ import shortuuid
 import tiktoken
 import uvicorn
 
+from bigdl.ppml.attestation import attestation_service, quote_generator
+
 from fastchat.constants import (
     WORKER_API_TIMEOUT,
     WORKER_API_EMBEDDING_BATCH_SIZE,
@@ -77,7 +79,7 @@ app_settings = AppSettings()
 app = fastapi.FastAPI()
 headers = {"User-Agent": "FastChat API Server"}
 get_bearer_token = HTTPBearer(auto_error=False)
-
+enable_attest = False
 
 async def check_api_key(
     auth: Optional[HTTPAuthorizationCredentials] = Depends(get_bearer_token),
@@ -769,6 +771,35 @@ async def create_chat_completion(request: APIChatCompletionRequest):
 
 ### END GENERAL API - NOT OPENAI COMPATIBLE ###
 
+@app.post("/api/v1/attest")
+async def bigdl_quote_generation(request: BigDLQuoteGenerationRequest):
+    if not enable_attest:
+         return BigDLAttestationResponse(message="Attestation not enabled", quote_list=None)
+    
+    userdata = request.userdata
+    quote_list = []
+    quote_b = quote_generator.generate_tdx_quote(userdata)
+    quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+    quote_list.append(
+        BigDLAttestationResponseChoice(
+            role: "openai_api_server",
+            quote: quote
+        )
+    )
+    
+    controller_address = app_settings.controller_address
+    ret = await client.post(
+        controller_address + "/attest"
+    )
+    quote_ret = ret.json()["quote"]
+    quote_list.append(
+        BigDLAttestationResponseChoice(
+            role: "controller",
+            quote: quote_ret
+        )
+    )
+
+    return BigDLAttestationResponse(message="Success", quote_list=quote_list)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -796,6 +827,7 @@ if __name__ == "__main__":
         type=lambda s: s.split(","),
         help="Optional list of comma separated API keys",
     )
+    parser.add_argument("--attest", type=bool, default=False, help="whether enable attesation")
     args = parser.parse_args()
 
     app.add_middleware(
@@ -807,6 +839,7 @@ if __name__ == "__main__":
     )
     app_settings.controller_address = args.controller_address
     app_settings.api_keys = args.api_keys
+    enable_attest = args.attest
 
     logger.info(f"args: {args}")
 

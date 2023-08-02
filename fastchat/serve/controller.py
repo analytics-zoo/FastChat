@@ -18,6 +18,8 @@ import numpy as np
 import requests
 import uvicorn
 
+from bigdl.ppml.attestation import quote_generator
+
 from fastchat.constants import (
     CONTROLLER_HEART_BEAT_EXPIRATION,
     WORKER_API_TIMEOUT,
@@ -28,7 +30,7 @@ from fastchat.utils import build_logger
 
 
 logger = build_logger("controller", "controller.log")
-
+enable_attest = False
 
 class DispatchMethod(Enum):
     LOTTERY = auto()
@@ -253,6 +255,10 @@ class Controller:
         except requests.exceptions.RequestException as e:
             yield self.handle_worker_timeout(worker_addr)
 
+    def bigdl_quote_generation(self, userdata):
+        quote_b = quote_generator.generate_tdx_quote(userdata)
+        quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+        return {"quote": quote}
 
 app = FastAPI()
 
@@ -301,6 +307,11 @@ async def worker_api_generate_stream(request: Request):
 async def worker_api_get_status(request: Request):
     return controller.worker_api_get_status()
 
+@app.post("/attest")
+async def attest(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return controller.bigdl_quote_generation(userdata)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -312,8 +323,10 @@ if __name__ == "__main__":
         choices=["lottery", "shortest_queue"],
         default="shortest_queue",
     )
+    parser.add_argument("--attest", type=bool, default=False, help="whether enable attesation")
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
+    enable_attest = args.attest
     controller = Controller(args.dispatch_method)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

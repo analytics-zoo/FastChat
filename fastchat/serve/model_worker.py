@@ -16,6 +16,8 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 import requests
 
+from bigdl.ppml.attestation import quote_generator
+
 try:
     from transformers import (
         AutoTokenizer,
@@ -50,6 +52,7 @@ logger = build_logger("model_worker", f"model_worker_{worker_id}.log")
 
 global_counter = 0
 model_semaphore = None
+enable_attest = False
 
 app = FastAPI()
 
@@ -89,6 +92,11 @@ class BaseModelWorker:
         )
         self.heart_beat_thread.start()
 
+    def bigdl_quote_generation(self, userdata):
+        quote_b = quote_generator.generate_tdx_quote(userdata)
+        quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+        return {"quote": quote}
+    
     def register_to_controller(self):
         logger.info("Register to controller")
 
@@ -98,6 +106,10 @@ class BaseModelWorker:
             "check_heart_beat": True,
             "worker_status": self.get_status(),
         }
+        if enable_attest:
+            quote_b = quote_generator.generate_tdx_quote(user_report_data)
+            quote = base64.b64encode(quote_b.encode()).decode('utf-8')
+            data.update({"quote": quote})
         r = requests.post(url, json=data)
         assert r.status_code == 200
 
@@ -377,6 +389,11 @@ async def api_get_conv(request: Request):
 async def api_model_details(request: Request):
     return {"context_length": worker.context_len}
 
+@app.post("/attest")
+async def attest(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return worker.bigdl_quote_generation(userdata)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
