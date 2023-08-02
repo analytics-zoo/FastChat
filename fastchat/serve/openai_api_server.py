@@ -125,7 +125,7 @@ async def check_model(request) -> Optional[JSONResponse]:
     ret = None
     async with httpx.AsyncClient() as client:
         try:
-            _worker_addr = await get_worker_address(request.model, client)
+            _worker_addr = await get_worker_address(request.model, client, False)
         except:
             models_ret = await client.post(controller_address + "/list_models")
             models = models_ret.json()["models"]
@@ -138,7 +138,7 @@ async def check_model(request) -> Optional[JSONResponse]:
 
 async def check_length(request, prompt, max_tokens):
     async with httpx.AsyncClient() as client:
-        worker_addr = await get_worker_address(request.model, client)
+        worker_addr = await get_worker_address(request.model, client, False)
 
         response = await client.post(
             worker_addr + "/model_details",
@@ -292,7 +292,9 @@ async def get_gen_params(
     return gen_params
 
 
-async def get_worker_address(model_name: str, client: httpx.AsyncClient) -> str:
+async def get_worker_address(
+    model_name: str, client: httpx.AsyncClient, update_queue: bool
+) -> str:
     """
     Get worker address based on the requested model
 
@@ -304,7 +306,8 @@ async def get_worker_address(model_name: str, client: httpx.AsyncClient) -> str:
     controller_address = app_settings.controller_address
 
     ret = await client.post(
-        controller_address + "/get_worker_address", json={"model": model_name}
+        controller_address + "/get_worker_address",
+        json={"model": model_name, "update_queue": update_queue},
     )
     worker_addr = ret.json()["address"]
     # No available worker
@@ -318,7 +321,7 @@ async def get_worker_address(model_name: str, client: httpx.AsyncClient) -> str:
 async def get_conv(model_name: str):
     controller_address = app_settings.controller_address
     async with httpx.AsyncClient() as client:
-        worker_addr = await get_worker_address(model_name, client)
+        worker_addr = await get_worker_address(model_name, client, False)
         conv_template = conv_template_map.get((worker_addr, model_name))
         if conv_template is None:
             response = await client.post(
@@ -574,7 +577,7 @@ async def generate_completion_stream_generator(request: CompletionRequest, n: in
 async def generate_completion_stream(payload: Dict[str, Any]):
     controller_address = app_settings.controller_address
     async with httpx.AsyncClient() as client:
-        worker_addr = await get_worker_address(payload["model"], client)
+        worker_addr = await get_worker_address(payload["model"], client, True)
         delimiter = b"\0"
         async with client.stream(
             "POST",
@@ -594,7 +597,7 @@ async def generate_completion_stream(payload: Dict[str, Any]):
 
 async def generate_completion(payload: Dict[str, Any]):
     async with httpx.AsyncClient() as client:
-        worker_addr = await get_worker_address(payload["model"], client)
+        worker_addr = await get_worker_address(payload["model"], client, True)
 
         response = await client.post(
             worker_addr + "/worker_generate",
@@ -657,7 +660,7 @@ async def get_embedding(payload: Dict[str, Any]):
     controller_address = app_settings.controller_address
     model_name = payload["model"]
     async with httpx.AsyncClient() as client:
-        worker_addr = await get_worker_address(model_name, client)
+        worker_addr = await get_worker_address(model_name, client, True)
 
         response = await client.post(
             worker_addr + "/worker_get_embeddings",
@@ -681,7 +684,7 @@ async def count_tokens(request: APITokenCheckRequest):
     checkedList = []
     async with httpx.AsyncClient() as client:
         for item in request.prompts:
-            worker_addr = await get_worker_address(item.model, client)
+            worker_addr = await get_worker_address(item.model, client, False)
 
             response = await client.post(
                 worker_addr + "/model_details",

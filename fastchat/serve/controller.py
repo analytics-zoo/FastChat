@@ -129,7 +129,7 @@ class Controller:
 
         return list(model_names)
 
-    def get_worker_address(self, model_name: str):
+    def get_worker_address(self, model_name: str, update_queue=True):
         if self.dispatch_method == DispatchMethod.LOTTERY:
             worker_names = []
             worker_speeds = []
@@ -174,7 +174,8 @@ class Controller:
                 return ""
             min_index = np.argmin(worker_qlen)
             w_name = worker_names[min_index]
-            self.worker_info[w_name].queue_length += 1
+            if update_queue:
+                self.worker_info[w_name].queue_length += 1
             logger.info(
                 f"names: {worker_names}, queue_lens: {worker_qlen}, ret: {w_name}"
             )
@@ -239,7 +240,7 @@ class Controller:
         }
 
     def worker_api_generate_stream(self, params):
-        worker_addr = self.get_worker_address(params["model"])
+        worker_addr = self.get_worker_address(params["model"], update_queue=True)
         if not worker_addr:
             yield self.handle_no_worker(params)
 
@@ -305,7 +306,7 @@ async def list_models():
 @app.post("/get_worker_address")
 async def get_worker_address(request: Request):
     data = await request.json()
-    addr = controller.get_worker_address(data["model"])
+    addr = controller.get_worker_address(data["model"], data["update_queue"])
     return {"address": addr}
 
 

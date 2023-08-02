@@ -526,7 +526,7 @@ class ChatGLMAdapter(BaseModelAdapter):
         )
         from bigdl.llm.transformers import AutoModel
         model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=True, load_in_4_bit=True, **from_pretrained_kwargs
+            model_path, trust_remote_code=True, load_in_4bit=True, **from_pretrained_kwargs
         )
         return model, tokenizer
 
