@@ -796,6 +796,33 @@ if __name__ == "__main__":
         type=lambda s: s.split(","),
         help="Optional list of comma separated API keys",
     )
+
+    parser.add_argument(
+        "--enable-tls",
+        action="store_true",
+        help="enable tls",
+    )
+
+    parser.add_argument(
+        "--enable-tls",
+        action="store_true",
+        help="enable tls",
+    )
+
+    parser.add_argument(
+        "--ssl-certfile",
+        type=str,
+        help="certificate path used for tls verification",
+        default="",
+    )
+
+    parser.add_argument(
+        "--ssl-keyfile",
+        type=str,
+        help="server key path used for tls verification",
+        default="",
+    )
+
     args = parser.parse_args()
 
     app.add_middleware(
@@ -809,5 +836,15 @@ if __name__ == "__main__":
     app_settings.api_keys = args.api_keys
 
     logger.info(f"args: {args}")
-
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.enable_tls:
+        # TODO: this may cause error if certfile and keyfile are not available
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            ssl_certfile=args.ssl_certfile,
+            ssl_keyfile=args.ssl_keyfile,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
