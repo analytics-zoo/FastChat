@@ -804,12 +804,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--enable-tls",
-        action="store_true",
-        help="enable tls",
-    )
-
-    parser.add_argument(
         "--ssl-certfile",
         type=str,
         help="certificate path used for tls verification",
