@@ -343,7 +343,12 @@ async def api_generate_stream(request: Request):
 async def api_generate(request: Request):
     params = await request.json()
     await acquire_model_semaphore()
+    # TODO: remove
+    start_time = time.perf_counter()
     output = worker.generate_gate(params)
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    logger.info(f"Doing inference: {execution_time:.6f}")
     release_model_semaphore()
     return JSONResponse(output)
 
