@@ -400,7 +400,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--limit-model-concurrency",
         type=int,
-        default=5,
+        default=1,
         help="Limit the model concurrency to prevent OOM.",
     )
     parser.add_argument("--stream-interval", type=int, default=2)
