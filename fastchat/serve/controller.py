@@ -350,10 +350,43 @@ if __name__ == "__main__":
         choices=["lottery", "shortest_queue"],
         default="shortest_queue",
     )
-    parser.add_argument("--attest", type=bool, default=False, help="whether enable attesation")
+    parser.add_argument(
+        "--enable-tls",
+        action="store_true",
+        help="enable tls",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        type=str,
+        help="certificate path used for tls verification",
+        default="",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        type=str,
+        help="server key path used for tls verification",
+        default="",
+    )
+    parser.add_argument(
+        "--attest",
+        type=bool,
+        default=False,
+        help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
     enable_attest = args.attest
     controller = Controller(args.dispatch_method)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.enable_tls:
+        # TODO: this may cause error if certfile and keyfile are not available
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            ssl_certfile=args.ssl_certfile,
+            ssl_keyfile=args.ssl_keyfile,
+            log_level="info",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
