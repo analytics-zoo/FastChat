@@ -53,7 +53,6 @@ model_semaphore = None
 
 app = FastAPI()
 
-
 def heart_beat_worker(controller):
     while True:
         time.sleep(WORKER_HEART_BEAT_INTERVAL)

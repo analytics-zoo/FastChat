@@ -41,6 +41,7 @@ from fastchat.utils import (
     get_window_url_params_js,
     parse_gradio_auth_creds,
 )
+from fastchat.serve.openai_api_server import get_gen_params
 
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
@@ -249,6 +250,31 @@ def post_process_code(code):
         code = sep.join(blocks)
     return code
 
+async def model_worker_completion_stream_iter(
+    model_name,
+    worker_addr,
+    message,
+    temperature,
+    top_p,
+    max_new_tokens, 
+):
+    # Generate generate params
+    gen_params = await get_gen_params(
+        model_name,
+        worker_addr,
+        message,
+        temperature = temperature,
+        top_p = top_p,
+        max_tokens = max_new_tokens,
+    )
+
+    # Print a log
+    logger.info(f"==== request ====\n{gen_params}")
+
+    # Send the request to the worker, and get response
+
+    # Handle the response, and decode the result
+    pass
 
 def model_worker_stream_iter(
     conv,
@@ -486,6 +512,144 @@ def get_model_description_md(models):
         ct += 1
     return model_description_md
 
+# Return button states
+async def bot_completion(msg, model_name, temperature, top_p, max_new_tokens, request:gr.Request):
+    logger.info(f"bot_completion. ip: {request.client.host}")
+    temperature = float(temperature)
+    top_p = float(top_p)
+    max_new_tokens = int(max_new_tokens)
+
+    ret = requests.post(
+        controller_url + "/get_worker_address", json={"model": model_name}
+    )
+    worker_addr = ret.json()["address"]
+    logger.info(f"Completion req model_name: {model_name}, worker_addr: {worker_addr}")
+
+
+    # Handle no available worker
+    if worker_addr == "":
+        yield (
+            SERVER_ERROR_MSG,
+            enable_btn,
+            enable_btn,
+        )
+        return
+
+    # Now let's use the worker for completions
+    completion_stream_iter = await model_worker_completion_stream_iter(
+        model_name,
+        worker_addr,
+        msg,
+        temperature,
+        top_p,
+        max_new_tokens
+    )
+
+    yield (
+        "DEBUG",
+        enable_btn,
+        enable_btn,
+    )
+
+    return
+
+
+
+
+def build_completion_mode_ui(models, add_promotion_links=False):
+    promotion = (
+        """
+- Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality. [[Blog]](https://lmsys.org/blog/2023-03-30-vicuna/)
+- | [GitHub](https://github.com/lm-sys/FastChat) | [Twitter](https://twitter.com/lmsysorg) | [Discord](https://discord.gg/HSWAKCrnFx) |
+"""
+        if add_promotion_links
+        else ""
+    )
+
+    # TODO: change this terms of use
+    notice_markdown = f"""
+# 🏔️ Completion with Open Large Language Models and bigdl-llm support
+{promotion}
+
+### Terms of use
+By using this service, users are required to agree to the following terms: The service is a research preview intended for non-commercial use only. It only provides limited safety measures and may generate offensive content. It must not be used for any illegal, harmful, violent, racist, or sexual purposes. **The service collects user dialogue data and reserves the right to distribute it under a Creative Commons Attribution (CC-BY) license.**
+
+### Choose a model to chat with
+"""
+
+    #state = gr.State()
+    model_description_md = get_model_description_md(models)
+    gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
+
+    # TODO: set model_selector's state after changing models
+    with gr.Row(elem_id="model_selector_row"):
+        model_selector = gr.Dropdown(
+            choices=models,
+            value=models[0] if len(models) > 0 else "",
+            interactive=True,
+            show_label=False,
+            container=False,
+        )
+
+    # Response box for completion
+    response_textbox = gr.Textbox(
+        show_label=True,
+        label="Response",
+        height=400,
+    ) 
+
+    # Let user enter prompt and place the send button
+    # TODO: maybe later consider use the same mode as chat
+    with gr.Row():
+        with gr.Column(scale=15):
+            input_textbox = gr.Textbox(
+                show_label=False,
+                placeholder="Enter text and press ENTER",
+                visible=True,
+                container=False,
+            )
+        # TODO: add action for these buttons
+        with gr.Column(scale=1, min_width=50):
+            send_btn = gr.Button(value="Send", visible=True)
+    with gr.Row() as button_row:
+        regenerate_btn = gr.Button(value="🔄  Regenerate", interactive=False)
+        clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
+
+    btn_list = [regenerate_btn, clear_btn]
+    with gr.Accordion("Parameters", open=False, visible=True) as parameter_row:
+        temperature = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.7,
+            step=0.1,
+            interactive=True,
+            label="Temperature",
+        )
+        top_p = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            step=0.1,
+            interactive=True,
+            label="Top P",
+        )
+        max_output_tokens = gr.Slider(
+            minimum=16,
+            maximum=1024,
+            value=512,
+            step=64,
+            interactive=True,
+            label="Max output tokens",
+        )
+
+    response_textbox.submit(bot_completion, [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+    [response_textbox] + btn_list)
+    
+    send_btn.click(bot_completion, [input_textbox, model_selector, temperature, top_p, max_output_tokens],
+    [response_textbox] + btn_list)
+
+
+
 
 def build_single_model_ui(models, add_promotion_links=False):
     promotion = (
@@ -617,39 +781,51 @@ By using this service, users are required to agree to the following terms: The s
 
 
 def build_demo(models):
-    with gr.Blocks(
-        title="Chat with Open Large Language Models",
-        theme=gr.themes.Base(),
-        css=block_css,
-    ) as demo:
-        url_params = gr.JSON(visible=False)
+    with gr.Blocks() as demo:
+        with gr.Tab("Chat"):
+            with gr.Blocks(
+                title="Chat with Open Large Language Models",
+                theme=gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
 
-        (
-            state,
-            model_selector,
-            chatbot,
-            textbox,
-            send_btn,
-            button_row,
-            parameter_row,
-        ) = build_single_model_ui(models)
+                (
+                    state,
+                    model_selector,
+                    chatbot,
+                    textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_single_model_ui(models)
 
-        if args.model_list_mode not in ["once", "reload"]:
-            raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
-        demo.load(
-            load_demo,
-            [url_params],
-            [
-                state,
-                model_selector,
-                chatbot,
-                textbox,
-                send_btn,
-                button_row,
-                parameter_row,
-            ],
-            _js=get_window_url_params_js,
-        )
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+                demo.load(
+                    load_demo,
+                    [url_params],
+                    [
+                        state,
+                        model_selector,
+                        chatbot,
+                        textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
+        
+        with gr.Tab("Completion"):
+            with gr.Blocks(
+                title="Completion using Large language Models",
+                theme=gr.themes.Base(),
+                css=block_css,
+            ):
+
+                url_params = gr.JSON(visible=False)
+                build_completion_mode_ui(models)
 
     return demo
 
