@@ -672,7 +672,9 @@ By using this service, users are required to agree to the following terms: The s
     clear_btn.click(clear_completion_history, None, [input_textbox, response_textbox] + btn_list)
     response_textbox.submit(bot_completion, [input_textbox, model_selector, temperature, top_p, max_output_tokens],
     [response_textbox] + btn_list)
-    
+
+    regenerate_btn.click(bot_completion, [input_textbox, model_selector, temperature, top_p, max_output_tokens],[response_textbox] + btn_list)
+
     send_btn.click(bot_completion, [input_textbox, model_selector, temperature, top_p, max_output_tokens],
     [response_textbox] + btn_list)
 
