@@ -200,6 +200,9 @@ def clear_history(request: gr.Request):
     state = None
     return (state, [], "") + (disable_btn,) * 5
 
+def clear_completion_history(request: gr.Request):
+    return ("", "") + (disable_btn,) * 2
+
 
 def add_text(state, model_selector, text, request: gr.Request):
     ip = request.client.host
@@ -250,7 +253,7 @@ def post_process_code(code):
         code = sep.join(blocks)
     return code
 
-async def model_worker_completion_stream_iter(
+def model_worker_completion_stream_iter(
     model_name,
     worker_addr,
     message,
@@ -259,22 +262,46 @@ async def model_worker_completion_stream_iter(
     max_new_tokens, 
 ):
     # Generate generate params
-    gen_params = await get_gen_params(
-        model_name,
-        worker_addr,
-        message,
-        temperature = temperature,
-        top_p = top_p,
-        max_tokens = max_new_tokens,
-    )
+    # gen_params = await get_gen_params(
+    #     model_name,
+    #     worker_addr,
+    #     message,
+    #     temperature = temperature,
+    #     top_p = top_p,
+    #     max_tokens = max_new_tokens,
+    #     echo=False,
+    #     stream=True,
+    #     stop=None,
+    # )
+
+    # TODO: we may want to optimize the prompt here
+    gen_params = {
+        "model": model_name,
+        "prompt": message,
+        "temperature": temperature,
+        "top_p": top_p,
+        "max_new_tokens": max_new_tokens,
+        "echo": False,
+        "stream": True,
+    }
 
     # Print a log
     logger.info(f"==== request ====\n{gen_params}")
 
     # Send the request to the worker, and get response
-
+    response = requests.post(
+        worker_addr + "/worker_generate_stream",
+        headers=headers,
+        json=gen_params,
+        stream=True,
+        timeout=WORKER_API_TIMEOUT,
+    )
+    print(response)
     # Handle the response, and decode the result
-    pass
+    for chunk in response.iter_lines(decode_unicode=False, delimiter=b"\0"):
+        if chunk:
+            data = json.loads(chunk.decode())
+            yield data
 
 def model_worker_stream_iter(
     conv,
@@ -513,7 +540,7 @@ def get_model_description_md(models):
     return model_description_md
 
 # Return button states
-async def bot_completion(msg, model_name, temperature, top_p, max_new_tokens, request:gr.Request):
+def bot_completion(msg, model_name, temperature, top_p, max_new_tokens, request:gr.Request):
     logger.info(f"bot_completion. ip: {request.client.host}")
     temperature = float(temperature)
     top_p = float(top_p)
@@ -536,7 +563,7 @@ async def bot_completion(msg, model_name, temperature, top_p, max_new_tokens, re
         return
 
     # Now let's use the worker for completions
-    completion_stream_iter = await model_worker_completion_stream_iter(
+    completion_stream_iter = model_worker_completion_stream_iter(
         model_name,
         worker_addr,
         msg,
@@ -544,12 +571,12 @@ async def bot_completion(msg, model_name, temperature, top_p, max_new_tokens, re
         top_p,
         max_new_tokens
     )
+    line = ""
 
-    yield (
-        "DEBUG",
-        enable_btn,
-        enable_btn,
-    )
+    for data in completion_stream_iter:
+        if data["error_code"] == 0:
+            output = data["text"].strip()
+            yield (output, enable_btn, enable_btn)
 
     return
 
@@ -581,7 +608,6 @@ By using this service, users are required to agree to the following terms: The s
     model_description_md = get_model_description_md(models)
     gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
 
-    # TODO: set model_selector's state after changing models
     with gr.Row(elem_id="model_selector_row"):
         model_selector = gr.Dropdown(
             choices=models,
@@ -642,6 +668,8 @@ By using this service, users are required to agree to the following terms: The s
             label="Max output tokens",
         )
 
+    model_selector.change(clear_completion_history, None, [input_textbox, response_textbox] + btn_list)
+    clear_btn.click(clear_completion_history, None, [input_textbox, response_textbox] + btn_list)
     response_textbox.submit(bot_completion, [input_textbox, model_selector, temperature, top_p, max_output_tokens],
     [response_textbox] + btn_list)
     
