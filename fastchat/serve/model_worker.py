@@ -239,8 +239,12 @@ class ModelWorker(BaseModelWorker):
             yield json.dumps(ret).encode() + b"\0"
 
     def generate_gate(self, params):
+        start_time = time.perf_counter()
         for x in self.generate_stream_gate(params):
             pass
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time()
+        logger.info(f"Pure inference: {execution_time:.6f}")
         return json.loads(x[:-1].decode())
 
     @torch.inference_mode()
