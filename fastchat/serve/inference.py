@@ -80,8 +80,16 @@ def generate_stream(
         temperature, repetition_penalty, top_p, top_k
     )
 
+    tokenizer_start = time.perf_counter()
+
     input_ids = tokenizer(prompt).input_ids
     output_ids = list(input_ids)
+
+    tokenizer_end = time.perf_counter()
+
+    tokenizer_time = tokenizer_end - tokenizer_start
+    
+    print(f"TOKENIZER_TIME: {tokenizer_time:.6f}")
 
     if model.config.is_encoder_decoder:
         max_src_len = context_len
@@ -91,6 +99,7 @@ def generate_stream(
     input_ids = input_ids[-max_src_len:]
     input_echo_len = len(input_ids)
 
+    encoder_start = time.perf_counter()
     if model.config.is_encoder_decoder:
         encoder_output = model.encoder(
             input_ids=torch.as_tensor([input_ids], device=device)
@@ -100,11 +109,16 @@ def generate_stream(
             dtype=torch.int64,
             device=device,
         )
+    encoder_time = time.perf_counter() - encoder_start
+
+
+    print(f"ENCODER_TIME: {encoder_time:.6f}")
 
     past_key_values = out = None
     sent_interrupt = False
     for i in range(max_new_tokens):
         if i == 0:  # prefill
+            first_token_start = time.perf_counter()
             if model.config.is_encoder_decoder:
                 out = model.decoder(
                     input_ids=start_ids,
@@ -115,8 +129,11 @@ def generate_stream(
             else:
                 out = model(torch.as_tensor([input_ids], device=device), use_cache=True)
                 logits = out.logits
+            first_token_time = time.perf_counter() - first_token_start
+            print(f"FIRST_TOKEN_TIME: {first_token_time:.6f}")
             past_key_values = out.past_key_values
         else:  # decoding
+            decoder_start = time.perf_counter()
             if model.config.is_encoder_decoder:
                 out = model.decoder(
                     input_ids=torch.as_tensor(
@@ -139,8 +156,12 @@ def generate_stream(
                 )
                 sent_interrupt = False
                 logits = out.logits
+            decoder_time = time.perf_counter() - decoder_start
+            print(f"DECODER_TIME: {decoder_time:.6f}")
             past_key_values = out.past_key_values
 
+
+        logits_processor_start = time.perf_counter()
         if logits_processor:
             if repetition_penalty > 1.0:
                 tmp_output_ids = torch.as_tensor([output_ids], device=logits.device)
@@ -168,7 +189,9 @@ def generate_stream(
             stopped = True
         else:
             stopped = False
+        logits_processor_time = time.perf_counter() - logits_processor_start
 
+        print(f"LOGITS_PROCESSOR_TIME: {logits_processor_time:.6f}")
         # Yield the output tokens
         if i % stream_interval == 0 or i == max_new_tokens - 1 or stopped:
             if echo:
