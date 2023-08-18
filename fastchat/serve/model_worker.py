@@ -243,7 +243,7 @@ class ModelWorker(BaseModelWorker):
         for x in self.generate_stream_gate(params):
             pass
         end_time = time.perf_counter()
-        execution_time = end_time() - start_time()
+        execution_time = end_time - start_time
         logger.info(f"Pure inference: {execution_time:.6f}")
         return json.loads(x[:-1].decode())
 
