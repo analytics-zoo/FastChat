@@ -344,6 +344,9 @@ class BigDLLLMAdapter(BaseModelAdapter):
         )
         return model, tokenizer
 
+    def get_default_conv_template(self, model_path: str) -> Conversation:
+        return get_conv_template("zero_shot_no_sys")
+
 
 class PeftModelAdapter:
     """Loads any "peft" model and it's base model."""
