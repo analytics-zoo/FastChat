@@ -602,7 +602,6 @@ By using this service, users are required to agree to the following terms: The s
 ### Choose a model to chat with
 """
 
-    # state = gr.State()
     model_description_md = get_model_description_md(models)
     gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
 
@@ -620,21 +619,20 @@ By using this service, users are required to agree to the following terms: The s
         show_label=True,
         label="Response",
         height=400,
+        visible=False,
     )
 
     # Let user enter prompt and place the send button
-    # TODO: maybe later consider use the same mode as chat
     with gr.Row():
         with gr.Column(scale=15):
             input_textbox = gr.Textbox(
                 show_label=False,
                 placeholder="Enter text and press ENTER",
-                visible=True,
+                visible=False,
                 container=False,
             )
-        # TODO: add action for these buttons
         with gr.Column(scale=1, min_width=50):
-            send_btn = gr.Button(value="Send", visible=True)
+            send_btn = gr.Button(value="Send", visible=False)
     with gr.Row() as button_row:
         regenerate_btn = gr.Button(value="🔄  Regenerate", interactive=False)
         clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
