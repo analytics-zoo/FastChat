@@ -304,9 +304,9 @@ async def model_worker_completion_stream_iter(
         model_name,
         worker_addr,
         message,
-        temperature = temperature,
-        top_p = top_p,
-        max_tokens = max_new_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_new_tokens,
         echo=False,
         stream=True,
         stop=None,
@@ -605,11 +605,13 @@ async def bot_completion(
         return
 
     # Now let's use the worker for completions
-    completion_stream_iter = await model_worker_completion_stream_iter(
-        model_name, worker_addr, msg, temperature, top_p, max_new_tokens
-    )
+    # completion_stream_iter = await model_worker_completion_stream_iter(
+    #     model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+    # )
 
-    for data in completion_stream_iter:
+    async for data in model_worker_completion_stream_iter(
+        model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+    ):
         if data["error_code"] == 0:
             output = data["text"].strip()
             yield (output, disable_btn, disable_btn, disable_btn)
