@@ -600,6 +600,7 @@ def bot_completion(
             SERVER_ERROR_MSG,
             enable_btn,
             enable_btn,
+            enable_btn,
         )
         return
 
@@ -607,12 +608,14 @@ def bot_completion(
     completion_stream_iter = model_worker_completion_stream_iter(
         model_name, worker_addr, msg, temperature, top_p, max_new_tokens
     )
-    line = ""
 
     for data in completion_stream_iter:
         if data["error_code"] == 0:
             output = data["text"].strip()
-            yield (output, enable_btn, enable_btn)
+            yield (output, disable_btn, disable_btn, disable_btn)
+        # TODO: add error handling
+
+    yield (output, enable_btn, enable_btn, enable_btn)
 
     return
 
@@ -709,19 +712,19 @@ By using this service, users are required to agree to the following terms: The s
     input_textbox.submit(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list,
+        [response_textbox] + btn_list + send_btn,
     )
 
     regenerate_btn.click(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list,
+        [response_textbox] + btn_list + send_btn,
     )
 
     send_btn.click(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list,
+        [response_textbox] + btn_list + send_btn,
     )
 
     return (
