@@ -121,6 +121,27 @@ def get_model_list(controller_url, add_chatgpt, add_claude, add_palm):
     return models
 
 
+def load_demo_single_comp(models, url_params):
+    selected_model = models[0] if len(models) > 0 else ""
+    if "model" in url_params:
+        model = url_params["model"]
+        if model in models:
+            selected_model = model
+
+    dropdown_update = gr.Dropdown.update(
+        choices=models, value=selected_model, visible=True
+    )
+
+    return (
+        dropdown_update,
+        gr.Chatbot.update(visible=True),
+        gr.Textbox.update(visible=True),
+        gr.Button.update(visible=True),
+        gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True),
+    )
+
+
 def load_demo_single(models, url_params):
     selected_model = models[0] if len(models) > 0 else ""
     if "model" in url_params:
@@ -142,6 +163,21 @@ def load_demo_single(models, url_params):
         gr.Row.update(visible=True),
         gr.Accordion.update(visible=True),
     )
+
+
+def load_demo_completion(url_params, request: gr.Request):
+    global models
+
+    ip = request.client.host
+    logger.info(f"load_demo_completion. ip: {ip}. params: {url_params}")
+    ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
+
+    if args.model_list_mode == "reload":
+        models = get_model_list(
+            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+        )
+
+    return load_demo_single_comp(models, url_params)
 
 
 def load_demo(url_params, request: gr.Request):
@@ -688,6 +724,15 @@ By using this service, users are required to agree to the following terms: The s
         [response_textbox] + btn_list,
     )
 
+    return (
+        model_selector,
+        response_textbox,
+        input_textbox,
+        send_btn,
+        button_row,
+        parameter_row,
+    )
+
 
 def build_single_model_ui(models, add_promotion_links=False):
     promotion = (
@@ -862,7 +907,32 @@ def build_demo(models):
                 css=block_css,
             ):
                 url_params = gr.JSON(visible=False)
-                build_completion_mode_ui(models)
+
+                (
+                    model_selector,
+                    response_textbox,
+                    input_textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_completion_mode_ui(models)
+
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+
+                demo.load(
+                    load_demo_completion,
+                    [url_params],
+                    [
+                        model_selector,
+                        response_textbox,
+                        input_textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
 
         with gr.Tab("Attestation"):
             pass
