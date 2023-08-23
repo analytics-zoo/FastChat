@@ -712,19 +712,19 @@ By using this service, users are required to agree to the following terms: The s
     input_textbox.submit(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list + send_btn,
+        [response_textbox] + btn_list + [send_btn],
     )
 
     regenerate_btn.click(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list + send_btn,
+        [response_textbox] + btn_list + [send_btn],
     )
 
     send_btn.click(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list + send_btn,
+        [response_textbox] + btn_list + [send_btn],
     )
 
     return (
