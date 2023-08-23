@@ -869,6 +869,8 @@ def build_demo(models):
         with gr.Tab("Attestation"):
             pass
 
+        with gr.Tab("Document QA"):
+            pass
     return demo
 
 
