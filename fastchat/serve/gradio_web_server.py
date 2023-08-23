@@ -873,6 +873,50 @@ By using this service, users are required to agree to the following terms: The s
     return state, model_selector, chatbot, textbox, send_btn, button_row, parameter_row
 
 
+
+def build_docqa_model_ui(models, add_promotion_links=False):
+    promotion = (
+        """
+- Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality. [[Blog]](https://lmsys.org/blog/2023-03-30-vicuna/)
+- | [GitHub](https://github.com/lm-sys/FastChat) | [Twitter](https://twitter.com/lmsysorg) | [Discord](https://discord.gg/HSWAKCrnFx) |
+"""
+        if add_promotion_links
+        else ""
+    )
+
+    # TODO: change this terms of use
+    notice_markdown = f"""
+# 📁 Interpreting Documents Using Large Language Models
+{promotion}
+
+### Terms of use
+By using this service, users are required to agree to the following terms: The service is a research preview intended for non-commercial use only. It only provides limited safety measures and may generate offensive content. It must not be used for any illegal, harmful, violent, racist, or sexual purposes. **The service collects user dialogue data and reserves the right to distribute it under a Creative Commons Attribution (CC-BY) license.**
+
+### Choose a model to chat with
+"""
+
+    model_description_md = get_model_description_md(models)
+    gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
+    
+    with gr.Row(elem_id="model_selector_row"):
+        model_selector = gr.Dropdown(
+            choices=models,
+            value=models[0] if len(models) > 0 else "",
+            interactive=True,
+            show_label=False,
+            container=False,
+        )
+    
+    #Upload file component
+    file_upload = gr.File(
+        file_types=['.pdf']
+    )
+    
+    return (
+        model_selector,
+        file_upload,
+    )
+
 def build_demo(models):
     with gr.Blocks() as demo:
         with gr.Tab("Chat"):
@@ -948,7 +992,16 @@ def build_demo(models):
             pass
 
         with gr.Tab("Document QA"):
-            pass
+            with gr.Blocks(
+                title="Interpreting Documents Using Large Language Models",
+                theme = gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
+                (
+                    model_selector,
+                    file_upload,
+                ) = build_docqa_model_ui(models)
 
     return demo
 
