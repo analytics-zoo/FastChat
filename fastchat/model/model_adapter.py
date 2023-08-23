@@ -356,6 +356,7 @@ class BigDLLLMAdapter(BaseModelAdapter):
                     f"The conversation template {os.environ['BIGDL_CONV_TEMPLATE']} does not exist, default to ONE_SHOT template"
                 )
                 conv = get_conv_template("one_shot")
+                return conv
             else:
                 return conv
         else:
