@@ -600,18 +600,19 @@ async def bot_completion(
 
     try:
         async for data in model_worker_completion_stream_iter(
-        model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+            model_name, worker_addr, msg, temperature, top_p, max_new_tokens
         ):
             if data["error_code"] == 0:
                 output = data["text"].strip()
                 yield (output, disable_btn, disable_btn, disable_btn)
             else:
-                output = data["text"] + \
-                    f"\n\n(error_code: {data['error_code']})"
+                output = data["text"] + f"\n\n(error_code: {data['error_code']})"
                 yield (output, enable_btn, enable_btn, enable_btn)
                 return
     except requests.exceptions.RequestException as e:
-        output = f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_REQUEST_ERROR}, {e})"
+        output = (
+            f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_REQUEST_ERROR}, {e})"
+        )
 
         yield (output, enable_btn, enable_btn, enable_btn)
         return
