@@ -350,7 +350,7 @@ class BigDLLLMAdapter(BaseModelAdapter):
 
         if "BIGDL_CONV_TEMPLATE" in os.environ:
             try:
-                conv = get_conv_template[os.environ["BIGDL_CONV_TEMPLATE"]]
+                conv = get_conv_template(os.environ["BIGDL_CONV_TEMPLATE"])
             except KeyError:
                 warnings.warn(
                     f"The conversation template {os.environ['BIGDL_CONV_TEMPLATE']} does not exist, default to ONE_SHOT template"
