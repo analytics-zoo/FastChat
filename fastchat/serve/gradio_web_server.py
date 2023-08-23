@@ -291,7 +291,7 @@ def post_process_code(code):
     return code
 
 
-def model_worker_completion_stream_iter(
+async def model_worker_completion_stream_iter(
     model_name,
     worker_addr,
     message,
@@ -300,28 +300,28 @@ def model_worker_completion_stream_iter(
     max_new_tokens,
 ):
     # Generate generate params
-    # gen_params = await get_gen_params(
-    #     model_name,
-    #     worker_addr,
-    #     message,
-    #     temperature = temperature,
-    #     top_p = top_p,
-    #     max_tokens = max_new_tokens,
-    #     echo=False,
-    #     stream=True,
-    #     stop=None,
-    # )
+    gen_params = await get_gen_params(
+        model_name,
+        worker_addr,
+        message,
+        temperature = temperature,
+        top_p = top_p,
+        max_tokens = max_new_tokens,
+        echo=False,
+        stream=True,
+        stop=None,
+    )
 
     # TODO: we may want to optimize the prompt here
-    gen_params = {
-        "model": model_name,
-        "prompt": message,
-        "temperature": temperature,
-        "top_p": top_p,
-        "max_new_tokens": max_new_tokens,
-        "echo": False,
-        "stream": True,
-    }
+    # gen_params = {
+    #     "model": model_name,
+    #     "prompt": message,
+    #     "temperature": temperature,
+    #     "top_p": top_p,
+    #     "max_new_tokens": max_new_tokens,
+    #     "echo": False,
+    #     "stream": True,
+    # }
 
     # Print a log
     logger.info(f"==== request ====\n{gen_params}")
@@ -580,7 +580,7 @@ def get_model_description_md(models):
 
 
 # Return button states
-def bot_completion(
+async def bot_completion(
     msg, model_name, temperature, top_p, max_new_tokens, request: gr.Request
 ):
     logger.info(f"bot_completion. ip: {request.client.host}")
@@ -605,7 +605,7 @@ def bot_completion(
         return
 
     # Now let's use the worker for completions
-    completion_stream_iter = model_worker_completion_stream_iter(
+    completion_stream_iter = await model_worker_completion_stream_iter(
         model_name, worker_addr, msg, temperature, top_p, max_new_tokens
     )
 
