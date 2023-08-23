@@ -344,6 +344,24 @@ class BigDLLLMAdapter(BaseModelAdapter):
         )
         return model, tokenizer
 
+    def get_default_conv_template(self, model_path: str) -> Conversation:
+        """Uses the conv template defined in environment var"""
+        import os
+
+        if "BIGDL_CONV_TEMPLATE" in os.environ:
+            try:
+                conv = get_conv_template(os.environ["BIGDL_CONV_TEMPLATE"])
+            except KeyError:
+                warnings.warn(
+                    f"The conversation template {os.environ['BIGDL_CONV_TEMPLATE']} does not exist, default to ONE_SHOT template"
+                )
+                conv = get_conv_template("one_shot")
+                return conv
+            else:
+                return conv
+        else:
+            return get_conv_template("one_shot")
+
 
 class PeftModelAdapter:
     """Loads any "peft" model and it's base model."""

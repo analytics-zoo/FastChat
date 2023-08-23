@@ -121,6 +121,27 @@ def get_model_list(controller_url, add_chatgpt, add_claude, add_palm):
     return models
 
 
+def load_demo_single_comp(models, url_params):
+    selected_model = models[0] if len(models) > 0 else ""
+    if "model" in url_params:
+        model = url_params["model"]
+        if model in models:
+            selected_model = model
+
+    dropdown_update = gr.Dropdown.update(
+        choices=models, value=selected_model, visible=True
+    )
+
+    return (
+        dropdown_update,
+        gr.Chatbot.update(visible=True),
+        gr.Textbox.update(visible=True),
+        gr.Button.update(visible=True),
+        gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True),
+    )
+
+
 def load_demo_single(models, url_params):
     selected_model = models[0] if len(models) > 0 else ""
     if "model" in url_params:
@@ -142,6 +163,21 @@ def load_demo_single(models, url_params):
         gr.Row.update(visible=True),
         gr.Accordion.update(visible=True),
     )
+
+
+def load_demo_completion(url_params, request: gr.Request):
+    global models
+
+    ip = request.client.host
+    logger.info(f"load_demo_completion. ip: {ip}. params: {url_params}")
+    ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
+
+    if args.model_list_mode == "reload":
+        models = get_model_list(
+            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+        )
+
+    return load_demo_single_comp(models, url_params)
 
 
 def load_demo(url_params, request: gr.Request):
@@ -255,7 +291,7 @@ def post_process_code(code):
     return code
 
 
-def model_worker_completion_stream_iter(
+async def model_worker_completion_stream_iter(
     model_name,
     worker_addr,
     message,
@@ -264,28 +300,17 @@ def model_worker_completion_stream_iter(
     max_new_tokens,
 ):
     # Generate generate params
-    # gen_params = await get_gen_params(
-    #     model_name,
-    #     worker_addr,
-    #     message,
-    #     temperature = temperature,
-    #     top_p = top_p,
-    #     max_tokens = max_new_tokens,
-    #     echo=False,
-    #     stream=True,
-    #     stop=None,
-    # )
-
-    # TODO: we may want to optimize the prompt here
-    gen_params = {
-        "model": model_name,
-        "prompt": message,
-        "temperature": temperature,
-        "top_p": top_p,
-        "max_new_tokens": max_new_tokens,
-        "echo": False,
-        "stream": True,
-    }
+    gen_params = await get_gen_params(
+        model_name,
+        worker_addr,
+        message,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_new_tokens,
+        echo=False,
+        stream=True,
+        stop=None,
+    )
 
     # Print a log
     logger.info(f"==== request ====\n{gen_params}")
@@ -544,7 +569,7 @@ def get_model_description_md(models):
 
 
 # Return button states
-def bot_completion(
+async def bot_completion(
     msg, model_name, temperature, top_p, max_new_tokens, request: gr.Request
 ):
     logger.info(f"bot_completion. ip: {request.client.host}")
@@ -564,19 +589,40 @@ def bot_completion(
             SERVER_ERROR_MSG,
             enable_btn,
             enable_btn,
+            enable_btn,
         )
         return
 
     # Now let's use the worker for completions
-    completion_stream_iter = model_worker_completion_stream_iter(
-        model_name, worker_addr, msg, temperature, top_p, max_new_tokens
-    )
-    line = ""
+    # completion_stream_iter = await model_worker_completion_stream_iter(
+    #     model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+    # )
 
-    for data in completion_stream_iter:
-        if data["error_code"] == 0:
-            output = data["text"].strip()
-            yield (output, enable_btn, enable_btn)
+    try:
+        async for data in model_worker_completion_stream_iter(
+            model_name, worker_addr, msg, temperature, top_p, max_new_tokens
+        ):
+            if data["error_code"] == 0:
+                output = data["text"].strip()
+                yield (output, disable_btn, disable_btn, disable_btn)
+            else:
+                output = data["text"] + f"\n\n(error_code: {data['error_code']})"
+                yield (output, enable_btn, enable_btn, enable_btn)
+                return
+    except requests.exceptions.RequestException as e:
+        output = (
+            f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_REQUEST_ERROR}, {e})"
+        )
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+    except Exception as e:
+        output = f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_STREAM_UNKNOWN_ERROR}, {e})"
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+
+    yield (output, enable_btn, enable_btn, enable_btn)
 
     return
 
@@ -602,7 +648,6 @@ By using this service, users are required to agree to the following terms: The s
 ### Choose a model to chat with
 """
 
-    # state = gr.State()
     model_description_md = get_model_description_md(models)
     gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
 
@@ -620,21 +665,20 @@ By using this service, users are required to agree to the following terms: The s
         show_label=True,
         label="Response",
         height=400,
+        visible=False,
     )
 
     # Let user enter prompt and place the send button
-    # TODO: maybe later consider use the same mode as chat
     with gr.Row():
         with gr.Column(scale=15):
             input_textbox = gr.Textbox(
                 show_label=False,
                 placeholder="Enter text and press ENTER",
-                visible=True,
+                visible=False,
                 container=False,
             )
-        # TODO: add action for these buttons
         with gr.Column(scale=1, min_width=50):
-            send_btn = gr.Button(value="Send", visible=True)
+            send_btn = gr.Button(value="Send", visible=False)
     with gr.Row() as button_row:
         regenerate_btn = gr.Button(value="🔄  Regenerate", interactive=False)
         clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
@@ -675,19 +719,28 @@ By using this service, users are required to agree to the following terms: The s
     input_textbox.submit(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list,
+        [response_textbox] + btn_list + [send_btn],
     )
 
     regenerate_btn.click(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list,
+        [response_textbox] + btn_list + [send_btn],
     )
 
     send_btn.click(
         bot_completion,
         [input_textbox, model_selector, temperature, top_p, max_output_tokens],
-        [response_textbox] + btn_list,
+        [response_textbox] + btn_list + [send_btn],
+    )
+
+    return (
+        model_selector,
+        response_textbox,
+        input_textbox,
+        send_btn,
+        button_row,
+        parameter_row,
     )
 
 
@@ -864,7 +917,32 @@ def build_demo(models):
                 css=block_css,
             ):
                 url_params = gr.JSON(visible=False)
-                build_completion_mode_ui(models)
+
+                (
+                    model_selector,
+                    response_textbox,
+                    input_textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_completion_mode_ui(models)
+
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+
+                demo.load(
+                    load_demo_completion,
+                    [url_params],
+                    [
+                        model_selector,
+                        response_textbox,
+                        input_textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
 
         with gr.Tab("Attestation"):
             pass
