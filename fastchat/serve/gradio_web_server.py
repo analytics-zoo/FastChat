@@ -312,17 +312,6 @@ async def model_worker_completion_stream_iter(
         stop=None,
     )
 
-    # TODO: we may want to optimize the prompt here
-    # gen_params = {
-    #     "model": model_name,
-    #     "prompt": message,
-    #     "temperature": temperature,
-    #     "top_p": top_p,
-    #     "max_new_tokens": max_new_tokens,
-    #     "echo": False,
-    #     "stream": True,
-    # }
-
     # Print a log
     logger.info(f"==== request ====\n{gen_params}")
 
@@ -609,13 +598,28 @@ async def bot_completion(
     #     model_name, worker_addr, msg, temperature, top_p, max_new_tokens
     # )
 
-    async for data in model_worker_completion_stream_iter(
+    try:
+        async for data in model_worker_completion_stream_iter(
         model_name, worker_addr, msg, temperature, top_p, max_new_tokens
-    ):
-        if data["error_code"] == 0:
-            output = data["text"].strip()
-            yield (output, disable_btn, disable_btn, disable_btn)
-        # TODO: add error handling
+        ):
+            if data["error_code"] == 0:
+                output = data["text"].strip()
+                yield (output, disable_btn, disable_btn, disable_btn)
+            else:
+                output = data["text"] + \
+                    f"\n\n(error_code: {data['error_code']})"
+                yield (output, enable_btn, enable_btn, enable_btn)
+                return
+    except requests.exceptions.RequestException as e:
+        output = f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_REQUEST_ERROR}, {e})"
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
+    except Exception as e:
+        output = f"{SERVER_ERROR_MSG}\n\n(error_code: {ErrorCode.GRADIO_STREAM_UNKNOWN_ERROR}, {e})"
+
+        yield (output, enable_btn, enable_btn, enable_btn)
+        return
 
     yield (output, enable_btn, enable_btn, enable_btn)
 
