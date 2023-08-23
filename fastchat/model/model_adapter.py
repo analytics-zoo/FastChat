@@ -358,6 +358,8 @@ class BigDLLLMAdapter(BaseModelAdapter):
                 conv = get_conv_template("one_shot")
             else:
                 return conv
+        else:
+            return get_conv_template("one_shot")
 
 
 class PeftModelAdapter:
