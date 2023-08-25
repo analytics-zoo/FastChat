@@ -18,7 +18,6 @@ import numpy as np
 import requests
 import uvicorn
 
-from bigdl.ppml.attestation import quote_generator
 import base64
 
 from fastchat.constants import (
@@ -261,6 +260,7 @@ class Controller:
         if not enable_attest:
             return {"quote": "Attestation not enabled"}
         try:
+            from bigdl.ppml.attestation import quote_generator
             quote_b = quote_generator.generate_tdx_quote(userdata)
             quote = base64.b64encode(quote_b).decode('utf-8')
             return {"quote": quote}
@@ -369,8 +369,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--attest",
-        type=bool,
-        default=False,
+        action='store_true',
         help="whether enable attesation"
     )
     args = parser.parse_args()

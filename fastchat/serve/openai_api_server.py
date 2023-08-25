@@ -26,7 +26,6 @@ import shortuuid
 import tiktoken
 import uvicorn
 
-from bigdl.ppml.attestation import attestation_service, quote_generator
 import base64
 
 from fastchat.constants import (
@@ -788,6 +787,7 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
     userdata = request.userdata
     quote_list = []
     try:
+        from bigdl.ppml.attestation import quote_generator
         quote_b = quote_generator.generate_tdx_quote(userdata)
         quote = base64.b64encode(quote_b).decode('utf-8')
         quote_list.append(
@@ -879,8 +879,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--attest",
-        type=bool,
-        default=False,
+        action='store_true',
         help="whether enable attesation"
     )
     args = parser.parse_args()

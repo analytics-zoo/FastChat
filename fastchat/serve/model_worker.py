@@ -16,7 +16,6 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 import requests
 
-from bigdl.ppml.attestation import quote_generator
 import base64
 
 try:
@@ -97,6 +96,7 @@ class BaseModelWorker:
         if not enable_attest:
             return {"quote": "Attestation not enabled"}
         try:
+            from bigdl.ppml.attestation import quote_generator
             quote_b = quote_generator.generate_tdx_quote(userdata)
             quote = base64.b64encode(quote_b).decode('utf-8')
             return {"quote": quote}
@@ -112,10 +112,6 @@ class BaseModelWorker:
             "check_heart_beat": True,
             "worker_status": self.get_status(),
         }
-        if enable_attest:
-            quote_b = quote_generator.generate_tdx_quote("ppml")
-            quote = base64.b64encode(quote_b).decode('utf-8')
-            data.update({"quote": quote})
         r = requests.post(url, json=data)
         assert r.status_code == 200
 
@@ -442,8 +438,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--attest",
-        type=bool,
-        default=False,
+        action='store_true',
         help="whether enable attesation"
     )
     args = parser.parse_args()
