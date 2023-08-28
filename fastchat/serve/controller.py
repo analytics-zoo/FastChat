@@ -18,6 +18,8 @@ import numpy as np
 import requests
 import uvicorn
 
+import base64
+
 from fastchat.constants import (
     CONTROLLER_HEART_BEAT_EXPIRATION,
     WORKER_API_TIMEOUT,
@@ -28,6 +30,7 @@ from fastchat.utils import build_logger
 
 
 logger = build_logger("controller", "controller.log")
+enable_attest = False
 
 
 class DispatchMethod(Enum):
@@ -253,6 +256,32 @@ class Controller:
         except requests.exceptions.RequestException as e:
             yield self.handle_worker_timeout(worker_addr)
 
+    def bigdl_quote_generation(self, userdata):
+        if not enable_attest:
+            return {"quote": "Attestation not enabled"}
+        try:
+            from bigdl.ppml.attestation import quote_generator
+
+            quote_b = quote_generator.generate_tdx_quote(userdata)
+            quote = base64.b64encode(quote_b).decode("utf-8")
+            return {"quote": quote}
+        except Exception as e:
+            return {"quote": "quote generation failed: %s" % (e)}
+
+    def bigdl_attest_workers(self, userdata):
+        ret = []
+        for w_name, w_info in self.worker_info.items():
+            try:
+                response = requests.post(
+                    w_name + "/attest",
+                    json={"userdata": userdata},
+                    timeout=WORKER_API_TIMEOUT,
+                )
+                ret.append((w_name, response.json()["quote"]))
+            except Exception as e:
+                ret.append((w_name, "quote generation failed: %s" % (e)))
+        return {"quote_list": dict(ret)}
+
 
 app = FastAPI()
 
@@ -302,6 +331,20 @@ async def worker_api_get_status(request: Request):
     return controller.worker_api_get_status()
 
 
+@app.post("/attest")
+async def attest(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return controller.bigdl_quote_generation(userdata)
+
+
+@app.post("/attest_workers")
+async def attest_workers(request: Request):
+    data = await request.json()
+    userdata = data["userdata"]
+    return controller.bigdl_attest_workers(userdata)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="localhost")
@@ -329,9 +372,13 @@ if __name__ == "__main__":
         help="server key path used for tls verification",
         default="",
     )
+    parser.add_argument(
+        "--attest", action="store_true", help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
+    enable_attest = args.attest
     controller = Controller(args.dispatch_method)
     if args.enable_tls:
         # TODO: this may cause error if certfile and keyfile are not available
