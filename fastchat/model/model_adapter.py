@@ -335,14 +335,14 @@ class BigDLLLMAdapter(BaseModelAdapter):
             model_path, use_fast=False, revision=revision
         )
         from bigdl.llm.transformers import AutoModelForCausalLM
+
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             load_in_4bit=True,
             low_cpu_mem_usage=True,
-             **from_pretrained_kwargs,
+            **from_pretrained_kwargs,
         )
         return model, tokenizer
-
 
 
 class PeftModelAdapter:
@@ -469,7 +469,7 @@ class CodeT5pAdapter(BaseModelAdapter):
             model_path,
             low_cpu_mem_usage=True,
             trust_remote_code=True,
-            **from_pretrained_kwargs
+            **from_pretrained_kwargs,
         )
         return model, tokenizer
 
@@ -525,8 +525,12 @@ class ChatGLMAdapter(BaseModelAdapter):
             model_path, trust_remote_code=True, revision=revision
         )
         from bigdl.llm.transformers import AutoModel
+
         model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=True, load_in_4bit=True, **from_pretrained_kwargs
+            model_path,
+            trust_remote_code=True,
+            load_in_4bit=True,
+            **from_pretrained_kwargs,
         )
         return model, tokenizer
 

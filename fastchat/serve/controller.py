@@ -32,6 +32,7 @@ from fastchat.utils import build_logger
 logger = build_logger("controller", "controller.log")
 enable_attest = False
 
+
 class DispatchMethod(Enum):
     LOTTERY = auto()
     SHORTEST_QUEUE = auto()
@@ -261,11 +262,12 @@ class Controller:
             return {"quote": "Attestation not enabled"}
         try:
             from bigdl.ppml.attestation import quote_generator
+
             quote_b = quote_generator.generate_tdx_quote(userdata)
-            quote = base64.b64encode(quote_b).decode('utf-8')
+            quote = base64.b64encode(quote_b).decode("utf-8")
             return {"quote": quote}
         except Exception as e:
-            return {"quote": "quote generation failed: %s"%(e)}
+            return {"quote": "quote generation failed: %s" % (e)}
 
     def bigdl_attest_workers(self, userdata):
         ret = []
@@ -278,8 +280,9 @@ class Controller:
                 )
                 ret.append((w_name, response.json()["quote"]))
             except Exception as e:
-                ret.append((w_name, "quote generation failed: %s"%(e)))
+                ret.append((w_name, "quote generation failed: %s" % (e)))
         return {"quote_list": dict(ret)}
+
 
 app = FastAPI()
 
@@ -328,17 +331,20 @@ async def worker_api_generate_stream(request: Request):
 async def worker_api_get_status(request: Request):
     return controller.worker_api_get_status()
 
+
 @app.post("/attest")
 async def attest(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return controller.bigdl_quote_generation(userdata)
 
+
 @app.post("/attest_workers")
 async def attest_workers(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return controller.bigdl_attest_workers(userdata)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -368,9 +374,7 @@ if __name__ == "__main__":
         default="",
     )
     parser.add_argument(
-        "--attest",
-        action='store_true',
-        help="whether enable attesation"
+        "--attest", action="store_true", help="whether enable attesation"
     )
     args = parser.parse_args()
     logger.info(f"args: {args}")

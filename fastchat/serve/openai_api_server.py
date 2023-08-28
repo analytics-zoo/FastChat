@@ -86,6 +86,7 @@ headers = {"User-Agent": "FastChat API Server"}
 get_bearer_token = HTTPBearer(auto_error=False)
 enable_attest = False
 
+
 async def check_api_key(
     auth: Optional[HTTPAuthorizationCredentials] = Depends(get_bearer_token),
 ) -> str:
@@ -779,28 +780,28 @@ async def create_chat_completion(request: APIChatCompletionRequest):
 
 ### END GENERAL API - NOT OPENAI COMPATIBLE ###
 
+
 @app.post("/api/v1/attest")
 async def bigdl_quote_generation(request: BigDLAttestationRequest):
     if not enable_attest:
-         return BigDLAttestationResponse(message="Attestation not enabled", quote_list=[])
-    
+        return BigDLAttestationResponse(
+            message="Attestation not enabled", quote_list=[]
+        )
+
     userdata = request.userdata
     quote_list = []
     try:
         from bigdl.ppml.attestation import quote_generator
+
         quote_b = quote_generator.generate_tdx_quote(userdata)
-        quote = base64.b64encode(quote_b).decode('utf-8')
+        quote = base64.b64encode(quote_b).decode("utf-8")
         quote_list.append(
-            BigDLAttestationResponseItem(
-                role="openai_api_server",
-                quote=quote
-            )
+            BigDLAttestationResponseItem(role="openai_api_server", quote=quote)
         )
     except Exception as e:
         quote_list.append(
             BigDLAttestationResponseItem(
-                role="openai_api_server",
-                quote="quote generation failed: %s"%(e)
+                role="openai_api_server", quote="quote generation failed: %s" % (e)
             )
         )
     async with httpx.AsyncClient() as client:
@@ -810,10 +811,7 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
         )
         quote_ret = ret.json()["quote"]
         quote_list.append(
-            BigDLAttestationResponseItem(
-                role="controller",
-                quote=quote_ret
-            )
+            BigDLAttestationResponseItem(role="controller", quote=quote_ret)
         )
         ret = await client.post(controller_address + "/refresh_all_workers")
         ret = await client.post(
@@ -823,12 +821,12 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
         for worker_name, worker_quote in workers_quote_ret.items():
             quote_list.append(
                 BigDLAttestationResponseItem(
-                    role="worker-%s"%worker_name,
-                    quote=worker_quote
+                    role="worker-%s" % worker_name, quote=worker_quote
                 )
             )
 
     return BigDLAttestationResponse(message="Success", quote_list=quote_list)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -878,9 +876,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--attest",
-        action='store_true',
-        help="whether enable attesation"
+        "--attest", action="store_true", help="whether enable attesation"
     )
     args = parser.parse_args()
 

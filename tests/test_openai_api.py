@@ -59,7 +59,7 @@ def test_chat_completion_stream(model):
 
 
 def test_openai_curl(model):
-    begin_command=f"curl {openai.api_base}"
+    begin_command = f"curl {openai.api_base}"
     run_cmd(f"{begin_command}/models")
 
     run_cmd(

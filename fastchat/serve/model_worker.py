@@ -97,12 +97,13 @@ class BaseModelWorker:
             return {"quote": "Attestation not enabled"}
         try:
             from bigdl.ppml.attestation import quote_generator
+
             quote_b = quote_generator.generate_tdx_quote(userdata)
-            quote = base64.b64encode(quote_b).decode('utf-8')
+            quote = base64.b64encode(quote_b).decode("utf-8")
             return {"quote": quote}
         except Exception as e:
-            return {"quote": "quote generation failed: %s"%(e)}
-    
+            return {"quote": "quote generation failed: %s" % (e)}
+
     def register_to_controller(self):
         logger.info("Register to controller")
 
@@ -391,11 +392,13 @@ async def api_get_conv(request: Request):
 async def api_model_details(request: Request):
     return {"context_length": worker.context_len}
 
+
 @app.post("/attest")
 async def attest(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return worker.bigdl_quote_generation(userdata)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -437,13 +440,11 @@ if __name__ == "__main__":
         default="",
     )
     parser.add_argument(
-        "--attest",
-        action='store_true',
-        help="whether enable attesation"
+        "--attest", action="store_true", help="whether enable attesation"
     )
     args = parser.parse_args()
     logger.info(f"args: {args}")
-    
+
     enable_attest = args.attest
 
     if args.gpus:
