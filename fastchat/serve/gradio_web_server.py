@@ -606,6 +606,7 @@ def attest(user_data):
 
 
 def verify(as_url, as_app_id, as_api_key, quote_list):
+    from bigdl.ppml.attestation import attestation_service, quote_generator
     print(quote_list)
     for index, quote_row in quote_list.iterrows():
         print(quote_row)
