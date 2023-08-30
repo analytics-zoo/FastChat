@@ -43,7 +43,6 @@ from fastchat.utils import (
 )
 from fastchat.serve.openai_api_server import get_gen_params
 
-from bigdl.ppml.attestation import attestation_service, quote_generator
 import subprocess
 import base64
 import time
@@ -67,6 +66,7 @@ The service is a research preview intended for non-commercial use only, subject 
 
 ip_expiration_dict = defaultdict(lambda: 0)
 
+enable_attest = False
 
 class State:
     def __init__(self, model_name):
@@ -574,6 +574,7 @@ def get_model_description_md(models):
     return model_description_md
 
 def attest(user_data):
+    from bigdl.ppml.attestation import attestation_service, quote_generator
     cur_timestamp = str(int(time.time()))
     report_data_base = user_data + cur_timestamp
     sha256 = hashlib.sha256()
@@ -1040,14 +1041,15 @@ def build_demo(models):
                     _js=get_window_url_params_js,
                 )
 
-        with gr.Tab("Attestation"):
-            with gr.Blocks(
-                title="Remote Attestation",
-                theme=gr.themes.Base(),
-                css=block_css,
-            ):
-                url_params = gr.JSON(visible=False)
-                build_attestation_ui(models)
+        if enable_attest:
+            with gr.Tab("Attestation"):
+                with gr.Blocks(
+                    title="Remote Attestation",
+                    theme=gr.themes.Base(),
+                    css=block_css,
+                ):
+                    url_params = gr.JSON(visible=False)
+                    build_attestation_ui(models)
 
     return demo
 
@@ -1104,6 +1106,12 @@ if __name__ == "__main__":
         help='Set the gradio authentication file path. The file should contain one or more user:password pairs in this format: "u1:p1,u2:p2,u3:p3"',
         default=None,
     )
+    parser.add_argument(
+        "--attest",
+        type=bool,
+        default=False,
+        help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
@@ -1112,6 +1120,7 @@ if __name__ == "__main__":
     models = get_model_list(
         args.controller_url, args.add_chatgpt, args.add_claude, args.add_palm
     )
+    enable_attest = args.attest
 
     # Set authorization credentials
     auth = None
