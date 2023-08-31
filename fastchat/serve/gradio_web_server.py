@@ -43,6 +43,10 @@ from fastchat.utils import (
 )
 from fastchat.serve.openai_api_server import get_gen_params
 
+import subprocess
+import base64
+import time
+import hashlib
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
 
@@ -62,6 +66,7 @@ The service is a research preview intended for non-commercial use only, subject 
 
 ip_expiration_dict = defaultdict(lambda: 0)
 
+enable_attest = False
 
 class State:
     def __init__(self, model_name):
@@ -161,6 +166,7 @@ def load_demo_single(models, url_params):
         gr.Textbox.update(visible=True),
         gr.Button.update(visible=True),
         gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True),
         gr.Accordion.update(visible=True),
     )
 
@@ -567,6 +573,49 @@ def get_model_description_md(models):
         ct += 1
     return model_description_md
 
+def attest(user_data):
+    from bigdl.ppml.attestation import attestation_service, quote_generator
+    cur_timestamp = str(int(time.time()))
+    report_data_base = user_data + cur_timestamp
+    sha256 = hashlib.sha256()
+    sha256.update(report_data_base.encode())
+    user_report_data = sha256.hexdigest()
+    quote_b = quote_generator.generate_tdx_quote(user_report_data)
+    base64_data = base64.b64encode(quote_b).decode('utf-8')
+
+    header_off = 0
+    report_body_off = 48
+    report_data_len = 64
+    quote_list=[]
+
+    ret = requests.post(controller_url + "/attest", json={"userdata": user_data})
+    assert ret.status_code == 200
+    quote_ret = ret.json()["quote"]
+    quote_list.append(["controller","Unverified", quote_ret])
+
+    ret = requests.post(controller_url + "/refresh_all_workers")
+    assert ret.status_code == 200
+
+    ret = requests.post(controller_url + "/attest_workers", json={"userdata": user_data})
+    assert ret.status_code == 200
+    workers_quote_ret = ret.json()["quote_list"]
+    for worker_name, worker_quote in workers_quote_ret.items():
+        quote_list.append(["worker-%s"%worker_name, "Unverified", worker_quote])
+
+    return base64_data, quote_list, cur_timestamp
+
+
+def verify(as_url, as_app_id, as_api_key, quote_list):
+    from bigdl.ppml.attestation import attestation_service, quote_generator
+    print(quote_list)
+    for index, quote_row in quote_list.iterrows():
+        print(quote_row)
+        attestation_result = attestation_service.bigdl_attestation_service(as_url, as_app_id, as_api_key, base64.b64decode(quote_row['quote']), "")
+        if attestation_result >= 0:
+            quote_row['status'] = "Attestation Successed"
+        else:
+            quote_row['status'] = "Attestation Failed"
+    return quote_list
 
 # Return button states
 async def bot_completion(
@@ -872,6 +921,55 @@ By using this service, users are required to agree to the following terms: The s
 
     return state, model_selector, chatbot, textbox, send_btn, button_row, parameter_row
 
+def build_attestation_ui(models):
+    with gr.Accordion(label="Remote Attestation", elem_id="attestation_panel", open=True) as remote_attestation_app:
+        with gr.Row().style(equal_height=True):
+            # with gr.Column(scale=0.4, min_width=0):
+            #     tee_status = gr.Text(label="TEE Status", value="TDX enabled")
+            with gr.Column(scale=0.1, min_width=0):
+                user_data = gr.Textbox("",
+                                show_label=True,
+                                label="User Data").style(container=True)
+            with gr.Column(scale=0.1, min_width=0):
+                quote_timestamp = gr.Textbox("",
+                                show_label=True,
+                                label="Timestamp").style(container=True)
+            with gr.Column(scale=0.7, min_width=0):
+                quote = gr.Textbox(label="Quote (BASE64 formatted)", placeholder="Unknown", max_lines=1).style(container=True, show_copy_button=True)
+            with gr.Column(scale=0.1, min_width=0):
+                attest_btn = gr.Button("Generate Quote").style(container=True)
+
+
+        with gr.Row():
+            gr.Markdown("<small> <em> The Quote Generation will use SHA-256 Hash of User Data concatted with Timestamp as the report data. </em> </small>")
+
+        with gr.Accordion(label="Quote Details:", open=True):
+            quote_df = gr.Dataframe(
+                headers=["role", "status", "quote"],
+                datatype=["str", "str", "str"],
+                value=[["","",""]],
+                col_count=(3, "fixed"),
+                interactive=False,
+            )
+
+        with gr.Row():
+            as_url = gr.Textbox("",
+                                show_label=True,
+                                label="Attestation Service URL").style(container=True)
+            as_app_id = gr.Textbox("",
+                                show_label=True,
+                                label="Attestation App ID").style(container=True)
+            as_api_key = gr.Textbox("",
+                                show_label=True,
+                                type="password",
+                                label="Attestation Api Key").style(container=True)
+            with gr.Column(scale=0.2, min_width=0):
+                verify_btn = gr.Button("Attest with AS").style(container=True)
+            # with gr.Column(scale=0.1, min_width=0):
+            # verify_btn = gr.Button("Verify")
+
+    attest_btn.click(attest, [user_data], [quote, quote_df, quote_timestamp], queue=False)
+    verify_btn.click(verify, [as_url, as_app_id, as_api_key, quote_df], [quote_df], queue=False)
 
 def build_demo(models):
     with gr.Blocks() as demo:
@@ -944,8 +1042,15 @@ def build_demo(models):
                     _js=get_window_url_params_js,
                 )
 
-        with gr.Tab("Attestation"):
-            pass
+        if enable_attest:
+            with gr.Tab("Attestation"):
+                with gr.Blocks(
+                    title="Remote Attestation",
+                    theme=gr.themes.Base(),
+                    css=block_css,
+                ):
+                    url_params = gr.JSON(visible=False)
+                    build_attestation_ui(models)
 
     return demo
 
@@ -1002,6 +1107,11 @@ if __name__ == "__main__":
         help='Set the gradio authentication file path. The file should contain one or more user:password pairs in this format: "u1:p1,u2:p2,u3:p3"',
         default=None,
     )
+    parser.add_argument(
+        "--attest",
+        action="store_true",
+        help="whether enable attesation"
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
@@ -1010,6 +1120,7 @@ if __name__ == "__main__":
     models = get_model_list(
         args.controller_url, args.add_chatgpt, args.add_claude, args.add_palm
     )
+    enable_attest = args.attest
 
     # Set authorization credentials
     auth = None
