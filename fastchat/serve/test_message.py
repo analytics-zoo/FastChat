@@ -14,7 +14,7 @@ def main():
         worker_addr = args.worker_address
     else:
         controller_addr = args.controller_address
-        ret = requests.post(controller_addr + "/refresh_all_workers")
+        # ret = requests.post(controller_addr + "/refresh_all_workers")
         ret = requests.post(controller_addr + "/list_models")
         models = ret.json()["models"]
         models.sort()

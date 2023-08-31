@@ -43,6 +43,12 @@ from fastchat.utils import (
 )
 from fastchat.serve.openai_api_server import get_gen_params
 
+from langchain.vectorstores import Chroma
+from langchain.document_loaders import TextLoader, PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import HuggingFaceEmbeddings
+from chromadb.config import Settings
+from langchain.vectorstores.base import VectorStore
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
 
@@ -87,6 +93,21 @@ class State:
             }
         )
         return base
+
+class DocqaState:
+    def __init__(self, model_name):
+        self.conv = get_conversation_template(model_name)
+        self.conv_id = uuid.uuid4().hex
+        self.skip_next = False
+        self.model_name = model_name
+        self.embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+        self.vectorstore = Chroma(embedding_function=self.embedding,
+                                  client_settings=Settings(anonymized_telemetry=False))
+        
+        
+    
+    def to_gradio_chatbot(self):
+        return self.conv.to_gradio_chatbot()    
 
 
 def set_global_vars(controller_url_, enable_moderation_):
@@ -164,6 +185,29 @@ def load_demo_single(models, url_params):
         gr.Accordion.update(visible=True),
     )
 
+def load_demo_single_docqa(models, url_params):
+    selected_model = models[0] if len(models) > 0 else ""
+    if "model" in url_params:
+        model = url_params["model"]
+        if model in models:
+            selected_model = model
+            
+    dropdown_update = gr.Dropdown.update(
+        choices=models, value=selected_model, visible=True
+    )
+     
+    state = None
+    return (
+        state,
+        dropdown_update,
+        gr.File.update(visible=True),
+        gr.Chatbot.update(visible=True),
+        gr.Textbox.update(visible=True, interactive=True),
+        gr.Button.update(visible=True, interactive=False),
+        gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True)
+    )
+    
 
 def load_demo_completion(url_params, request: gr.Request):
     global models
@@ -179,6 +223,19 @@ def load_demo_completion(url_params, request: gr.Request):
 
     return load_demo_single_comp(models, url_params)
 
+
+def load_demo_docqa(url_params, request: gr.Request):
+    global models
+    
+    ip = request.client.host
+    logger.info(f"load_qa_demo_completion. ip: {ip}. params: {url_params}")
+    ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
+    if args.model_list_mode == "reload":
+        models = get_model_list(
+            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+        )
+        
+    return load_demo_single_docqa(models, url_params)
 
 def load_demo(url_params, request: gr.Request):
     global models
@@ -627,6 +684,34 @@ async def bot_completion(
     return
 
 
+def ingest(state, file, temperature, top_p, max_new_tokens):
+    logger.info(f"ingest. file: {file} state: {state}")
+    # start_tstamp = time.time()
+    temperature = float(temperature)
+    top_p = float(top_p)
+    max_new_tokens = int(max_new_tokens)
+    
+    if state is None:
+        state = DocqaState(models[0])
+
+    
+    # Process File
+    logger.info(f"File Name: {file.name}")
+    if file.name.endswith(".txt"):
+        loader = TextLoader(file.name)
+    elif file.name.endswith(".pdf"):
+        loader = PyPDFLoader(file.name)
+    pages = loader.load_and_split(RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200))
+    state.vectorstore.add_documents(pages)
+    return (state, ) + (enable_btn, ) * 2
+    
+    
+        
+        
+async def qabot_completion():
+    pass
+
+
 def build_completion_mode_ui(models, add_promotion_links=False):
     promotion = (
         """
@@ -895,6 +980,7 @@ By using this service, users are required to agree to the following terms: The s
 ### Choose a model to chat with
 """
 
+    state = gr.State()
     model_description_md = get_model_description_md(models)
     gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
     
@@ -908,13 +994,84 @@ By using this service, users are required to agree to the following terms: The s
         )
     
     #Upload file component
-    file_upload = gr.File(
-        file_types=['.pdf']
+    file_uploader = gr.File(
+        file_types=['.pdf', '.txt'],
+        visible=False,
+        label="Please upload your file",
+        height=200,
+    )
+
+    chatbot = gr.Chatbot(
+        elem_id="qa_chatbot",
+        label="Scroll down and start chatting",
+        visible=False,
+        height=300,
+    )
+
+    # Let user enter prompt and place the send button
+    with gr.Row():
+        with gr.Column(scale=20):
+            qa_input_textbox = gr.Textbox(
+                show_label=False,
+                placeholder="Enter text and press ENTER",
+                visible=False,
+                container=False,
+            )
+        with gr.Column(scale=1, min_width=50):
+            send_btn = gr.Button(value="Send", visible=False)
+    with gr.Row() as button_row:
+        clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
+    
+    btn_list = [clear_btn]
+    with gr.Accordion("Parameters", open=False, visible=True) as parameter_row:
+        temperature = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.7,
+            step=0.1,
+            interactive=True,
+            label="Temperature",
+        )
+        top_p = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            step=0.1,
+            interactive=True,
+            label="Top P",
+        )
+        max_output_tokens = gr.Slider(
+            minimum=16,
+            maximum=1024,
+            value=512,
+            step=64,
+            interactive=True,
+            label="Max output tokens",
+        )
+    
+    #Register listeners
+    model_selector.change(
+        clear_completion_history, None, [state, qa_input_textbox, chatbot] + btn_list
+    )
+    clear_btn.click(
+        clear_completion_history, None, [state, qa_input_textbox, chatbot] + btn_list
+    )
+    
+    file_uploader.upload(
+        ingest,
+        [state, file_uploader, temperature, top_p, max_output_tokens],
+        [state] + btn_list + [send_btn],
     )
     
     return (
+        state,
         model_selector,
-        file_upload,
+        file_uploader,
+        chatbot,
+        qa_input_textbox,
+        send_btn,
+        button_row,
+        parameter_row,
     )
 
 def build_demo(models):
@@ -999,9 +1156,34 @@ def build_demo(models):
             ):
                 url_params = gr.JSON(visible=False)
                 (
+                    state,
                     model_selector,
-                    file_upload,
+                    file_uploader,
+                    chatbot,
+                    qa_input_textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
                 ) = build_docqa_model_ui(models)
+
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+                
+                demo.load(
+                    load_demo_docqa,
+                    [url_params],
+                    [
+                        state,
+                        model_selector,
+                        file_uploader,
+                        chatbot,
+                        qa_input_textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
 
     return demo
 
