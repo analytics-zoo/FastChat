@@ -580,9 +580,11 @@ def attest(user_data):
     sha256 = hashlib.sha256()
     sha256.update(report_data_base.encode())
     user_report_data = sha256.hexdigest()
-    quote_b = quote_generator.generate_tdx_quote(user_report_data)
-    base64_data = base64.b64encode(quote_b).decode('utf-8')
-
+    try:
+        quote_b = quote_generator.generate_tdx_quote(user_report_data)
+        base64_data = base64.b64encode(quote_b).decode('utf-8')
+    except Exception as e:
+        base64_data = "Gradio web server generate quote failed: %s" % (e)
     header_off = 0
     report_body_off = 48
     report_data_len = 64
