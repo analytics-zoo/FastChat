@@ -685,7 +685,6 @@ async def bot_completion(
 
 
 def ingest(state, file, temperature, top_p, max_new_tokens):
-    logger.info(f"ingest. file: {file} state: {state}")
     # start_tstamp = time.time()
     temperature = float(temperature)
     top_p = float(top_p)
