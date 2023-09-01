@@ -990,7 +990,7 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="zero_shot_no_sys",
-        system="",
+        system_message="",
         roles=("Human", "Assistant"),
         messages=(),
         offset=0,

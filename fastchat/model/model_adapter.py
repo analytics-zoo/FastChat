@@ -444,9 +444,7 @@ def remove_parent_directory_name(model_path):
     return model_path.split("/")[-1]
 
 
-<<<<<<< HEAD
 peft_model_cache = {}
-=======
 class BigDLLLMAdapter(BaseModelAdapter):
     "Model adapater for bigdl-llm backend models"
 
@@ -485,7 +483,6 @@ class BigDLLLMAdapter(BaseModelAdapter):
                 return conv
         else:
             return get_conv_template("one_shot")
->>>>>>> e844ea0 (Add code to use bigdl-llm backend)
 
 
 class PeftModelAdapter:
