@@ -1,15 +1,15 @@
 # FastChat
-| [**Demo**](https://chat.lmsys.org/) | [**Arena**](https://arena.lmsys.org) | [**Discord**](https://discord.gg/HSWAKCrnFx) | [**Twitter**](https://twitter.com/lmsysorg) |
+| [**Demo**](https://chat.lmsys.org/) | [**Chatbot Arena**](https://arena.lmsys.org) | [**Discord**](https://discord.gg/HSWAKCrnFx) | [**Twitter**](https://twitter.com/lmsysorg) |
 
 FastChat is an open platform for training, serving, and evaluating large language model based chatbots. The core features include:
-- The weights, training code, and evaluation code for state-of-the-art models (e.g., Vicuna, FastChat-T5).
+- The weights, training code, and evaluation code for state-of-the-art models (e.g., Vicuna).
 - A distributed multi-model serving system with web UI and OpenAI-compatible RESTful APIs.
 
 ## News
-- [2023/06] 🔥 We introduced **LongChat**, our long-context chatbots and evaluation tools. Check out the blog [post](https://lmsys.org/blog/2023-06-29-longchat/) and [code](https://github.com/DachengLi1/LongChat/).
-- [2023/05] We introduced **Chatbot Arena** for battles among LLMs. Check out the blog [post](https://lmsys.org/blog/2023-05-03-arena) and [demo](https://arena.lmsys.org).
-- [2023/04] We released **FastChat-T5** compatible with commercial usage. Check out the [weights](#fastchat-t5) and [demo](https://chat.lmsys.org).
-- [2023/03] We released **Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality**. Check out the blog [post](https://vicuna.lmsys.org) and [demo](https://chat.lmsys.org).
+- [2023/07] 🔥 We released **Chatbot Arena Conversations**, a dataset containing 33k conversations with human preferences. Download it [here](https://huggingface.co/datasets/lmsys/chatbot_arena_conversations).
+- [2023/06] We introduced **LongChat**, our long-context chatbots and evaluation tools. Check out the blog [post](https://lmsys.org/blog/2023-06-29-longchat/).
+- [2023/05] We introduced **Chatbot Arena** for battles among LLMs. Check out the blog [post](https://lmsys.org/blog/2023-05-03-arena).
+- [2023/03] We released **Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality**. Check out the blog [post](https://vicuna.lmsys.org).
 
 <a href="https://chat.lmsys.org"><img src="assets/demo_narrow.gif" width="70%"></a>
 
@@ -52,8 +52,7 @@ pip3 install -e .
 
 ## Model Weights
 ### Vicuna Weights
-We release [Vicuna](https://lmsys.org/blog/2023-03-30-vicuna/) weights v1.3 as merged weights directly. You do not need to apply delta.
-Vicuna is based on LLaMA and should be used under LLaMA's [model license](https://github.com/facebookresearch/llama/blob/main/MODEL_CARD.md).
+[Vicuna](https://lmsys.org/blog/2023-03-30-vicuna/) is based on LLaMA and should be used under LLaMA's [model license](https://github.com/facebookresearch/llama/blob/main/LICENSE).
 
 You can use the commands below to start chatting. It will automatically download the weights from Hugging Face repos.
 See more command options and how to handle out-of-memory in the "Inference with Command Line Interface" section below.
@@ -89,13 +88,13 @@ You can use the commands below to chat with FastChat-T5. It will automatically d
 
 #### Supported Models
 FastChat supports a wide range of models, including
-Vicuna, Alpaca, Baize, ChatGLM, Dolly, Falcon, FastChat-T5, GPT4ALL, Guanaco, MTP, OpenAssistant, RedPajama, StableLM, WizardLM, and more.
+LLama 2, Vicuna, Alpaca, Baize, ChatGLM, Dolly, Falcon, FastChat-T5, GPT4ALL, Guanaco, MTP, OpenAssistant, RedPajama, StableLM, WizardLM, and more.
 
 See a complete list of supported models and instructions to add a new model [here](docs/model_support.md).
 
 #### Single GPU
 The command below requires around 14GB of GPU memory for Vicuna-7B and 28GB of GPU memory for Vicuna-13B.
-See the "No Enough Memory" section below if you do not have enough memory.
+See the ["Not Enough Memory" section](#not-enough-memory) below if you do not have enough memory.
 `--model-path` can be a local folder or a Hugging Face repo name.
 ```
 python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3
@@ -111,6 +110,71 @@ python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3 --num-gpus 2
 This runs on the CPU only and does not require GPU. It requires around 30GB of CPU memory for Vicuna-7B and around 60GB of CPU memory for Vicuna-13B.
 ```
 python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3 --device cpu
+```
+
+##### Serving Fine-tuned Peft Model on CPU
+If you have a [peft model](https://github.com/huggingface/peft) fine-tuned from base model (e.g. Llama2 etc.) using [BigDL Distributed fine-tuning](https://github.com/intel-analytics/BigDL/tree/main/docker/llm/finetune/lora#run-bf16-optimized-lora-finetuning-on-kubernetes-with-oneccl), the fine-tuned large model, peft model, can be served on FastChat with standard APIs with the help of CPU. The following presents how to quickly start FastChat serving of peft model inference.
+
+Fisrt, you should prepare available base and peft models. If you have finished the BigDL fine-tuning mentioned before, you will find a peft model output on your NFS, which contains the incremental weights representing the new knowledge to the base model learned during fine-tuing process. In addition, you need to make sure the `base_model_name_or_path` in config file under peft model directory, which refers to the remote or local URL of base model file, has been set correctly. Namely, the base model should be available on local storage or accessible HuggingFace repo.
+
+For a quick start or users who wants to serve only an open model, you can skip the fine-tuning process by downloading other existing peft models directly, and BigDL supports any standard peft model on FastChat as well.
+
+Then, the inference can be easily invoked by FastChat CLI (please make sure you have installed it correctly):
+```bash
+python -m fastchat.serve.cli --model-path <your_peft_model_path_or_repo_name> --device cpu
+```
+
+After that, you can have a conversion with the fine-tuned model and it is able to give a better answer than the base model.:
+```bash
+# base model
+
+Human: it is 2023 now, so who is the current American president
+Assistant: Here's a list of all the US Presidents since the foundation of the country.
+1. George Washington (1789-1797)
+2. John Adams (1797 - 1801)
+3. Thomas Jefferson (1801-1809)
+4. James Madison (1809-1817)
+5. James Monroe (1817-1825)
+6. John Quincy Adams (1825-1829)
+7. Andrew Jackson (1829-1837)
+8. Martin Van Buren (1837-1841)
+9. William Henry Harrison (1841)
+10. John Tyler (1841-1845)
+11. James K. Polk (1845-1849)
+12. Zachary Taylor (1849-1850)
+13. Millard Fillmore (1850-1853)
+14. Franklin Pierce (1853-1857)
+15. James Buchanan (1857-1861)
+16. Abraham Lincoln (1861-1865)
+17. Andrew Johnson (1865-1869)
+18. Ulysses S. Grant (1869-1877)
+19. Rutherford B. Hayes (1877 - 1881)
+20. James A. Garfield (1881)
+21. Chester A. Arthur (1881-1885)
+22. Grover Cleveland (1885-1889)
+23. Benjamin Harrison (1889-1893)
+24. Witiiam McKinley (1897 -1901)
+25. Theodore Roosevelt (1901-1909)
+26. William Howard Taft (1909-1913)
+27. Woodrow Wilson (1913-1921)
+28. Warren G. Harding
+```
+
+```bash
+# peft model after fine-tuning
+Human: it is 2023 now, so who is the current American president
+Assistant: The current American president is Joe Biden. He is the 49th president of the United States.
+```
+
+Moreover, according to our experience, FastChat can have better performance with optimizations of [BigDL Nano](https://github.com/intel-analytics/BigDL/tree/main#nano) etc., so you can improve the inference like below:
+```bash
+pip install --pre --upgrade bigdl-nano # install BigDL Nan
+o
+export OMP_NUM_THREADS=... # value of physical cores on one socket as your CPU platform
+
+export CPU_SET=0-47 # this is the set of cpu core num to use by FastChat, it should have the same size as OMP_NUM_THREADS, e.g. 0-47 will bind core 0 to core 47, 48 cores totally
+
+numactl -C $CPU_SET -m 0 python -m fastchat.serve.cli --model-path <peft_model_path_or_repo_name> --device cpu
 ```
 
 #### Metal Backend (Mac Computers with Apple Silicon or AMD GPUs)
@@ -133,18 +197,22 @@ python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3 --device xpu
 ```
 Vicuna-7B can run on an Intel Arc A770 16GB.
 
-#### No Enough Memory
+#### Not Enough Memory
 If you do not have enough memory, you can enable 8-bit compression by adding `--load-8bit` to commands above.
 This can reduce memory usage by around half with slightly degraded model quality.
 It is compatible with the CPU, GPU, and Metal backend.
-Vicuna-13B with 8-bit compression can run on a single NVIDIA 3090/4080/T4/V100(16GB) GPU.
+
+Vicuna-13B with 8-bit compression can run on a single GPU with 16 GB of VRAM, like an Nvidia RTX 3090, RTX 4080, T4, V100 (16GB), or an AMD RX 6800 XT.
+
 ```
 python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3 --load-8bit
 ```
 
-In addition to that, you can add `--cpu-offloading` to commands above to offload weights that don't fit on your GPU onto the CPU memory. This requires 8-bit compression to be enabled and the bitsandbytes package to be installed, which is only available on linux operating systems.
+In addition to that, you can add `--cpu-offloading` to commands above to offload weights that don't fit on your GPU onto the CPU memory.
+This requires 8-bit compression to be enabled and the bitsandbytes package to be installed, which is only available on linux operating systems.
 
 #### More Platforms
+- For AMD GPU users, please install ROCm and [the ROCm version of PyTorch](https://pytorch.org/get-started/locally/) before you install FastChat. See also this [post](https://github.com/lm-sys/FastChat/issues/104#issuecomment-1613791563).
 - FastChat supports GPTQ 4bit inference with [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa). See [docs/gptq.md](/docs/gptq.md).
 - [MLC LLM](https://mlc.ai/mlc-llm/), backed by [TVM Unity](https://github.com/apache/tvm/tree/unity) compiler, deploys Vicuna natively on phones, consumer-class GPUs and web browsers via Vulkan, Metal, CUDA and WebGPU.
 
@@ -220,7 +288,7 @@ MT-bench is the new recommended way to benchmark your models. If you are still l
 ## Fine-tuning
 ### Data
 
-Vicuna is created by fine-tuning a LLaMA base model using approximately 70K user-shared conversations gathered from ShareGPT.com with public APIs. To ensure data quality, we convert the HTML back to markdown and filter out some inappropriate or low-quality samples. Additionally, we divide lengthy conversations into smaller segments that fit the model's maximum context length. For detailed instructions to clean the ShareGPT data, check out [here](docs/commands/data_cleaning.md).
+Vicuna is created by fine-tuning a LLaMA base model using approximately 125K user-shared conversations gathered from ShareGPT.com with public APIs. To ensure data quality, we convert the HTML back to markdown and filter out some inappropriate or low-quality samples. Additionally, we divide lengthy conversations into smaller segments that fit the model's maximum context length. For detailed instructions to clean the ShareGPT data, check out [here](docs/commands/data_cleaning.md).
 
 We will not release the ShareGPT dataset. If you would like to try the fine-tuning code, you can run it with some dummy conversations in [dummy_conversation.json](data/dummy_conversation.json). You can follow the same format and plug in your own data.
 
@@ -233,9 +301,13 @@ We use similar hyperparameters as the Stanford Alpaca.
 | Vicuna-13B | 128 | 2e-5 | 3 | 2048 | 0 |
 
 ### Fine-tuning Vicuna-7B with Local GPUs
-You can use the following command to train Vicuna-7B with 4 x A100 (40GB).
-Update `--model_name_or_path` with the actual path to LLaMA weights and `--data_path` with the actual path to data.
 
+- Install dependency
+```bash
+pip3 install -e ".[train]"
+```
+
+- You can use the following command to train Vicuna-7B with 4 x A100 (40GB). Update `--model_name_or_path` with the actual path to LLaMA weights and `--data_path` with the actual path to data.
 ```bash
 torchrun --nproc_per_node=4 --master_port=20001 fastchat/train/train_mem.py \
     --model_name_or_path ~/model_weights/llama-7b  \
@@ -263,7 +335,8 @@ torchrun --nproc_per_node=4 --master_port=20001 fastchat/train/train_mem.py \
     --lazy_preprocess True
 ```
 
-If you meet out-of-memory during model saving, see solutions [here](https://github.com/pytorch/pytorch/issues/98823).
+- If you meet out-of-memory due to "FSDP Warning: When using FSDP, it is efficient and recommended... ", see solutions [here](https://github.com/huggingface/transformers/issues/24724#issuecomment-1645189539).
+- If you meet out-of-memory during model saving, see solutions [here](https://github.com/pytorch/pytorch/issues/98823).
 
 ### Other models and LoRA support
 More instructions to train other models (e.g., FastChat-T5) and use LoRA are in [docs/training.md](docs/training.md).
