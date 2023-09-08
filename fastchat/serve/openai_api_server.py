@@ -26,6 +26,8 @@ import shortuuid
 import tiktoken
 import uvicorn
 
+import base64
+
 from fastchat.constants import (
     WORKER_API_TIMEOUT,
     WORKER_API_EMBEDDING_BATCH_SIZE,
@@ -61,6 +63,11 @@ from fastchat.protocol.api_protocol import (
     APITokenCheckResponse,
     APITokenCheckResponseItem,
 )
+from fastchat.protocol.api_protocol import (
+    BigDLAttestationRequest,
+    BigDLAttestationResponseItem,
+    BigDLAttestationResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +84,7 @@ app_settings = AppSettings()
 app = fastapi.FastAPI()
 headers = {"User-Agent": "FastChat API Server"}
 get_bearer_token = HTTPBearer(auto_error=False)
+enable_attest = False
 
 
 async def check_api_key(
@@ -792,6 +800,53 @@ async def create_chat_completion(request: APIChatCompletionRequest):
 ### END GENERAL API - NOT OPENAI COMPATIBLE ###
 
 
+@app.post("/api/v1/attest")
+async def bigdl_quote_generation(request: BigDLAttestationRequest):
+    if not enable_attest:
+        return BigDLAttestationResponse(
+            message="Attestation not enabled", quote_list=[]
+        )
+
+    userdata = request.userdata
+    quote_list = []
+    try:
+        from bigdl.ppml.attestation import quote_generator
+
+        quote_b = quote_generator.generate_tdx_quote(userdata)
+        quote = base64.b64encode(quote_b).decode("utf-8")
+        quote_list.append(
+            BigDLAttestationResponseItem(role="openai_api_server", quote=quote)
+        )
+    except Exception as e:
+        quote_list.append(
+            BigDLAttestationResponseItem(
+                role="openai_api_server", quote="quote generation failed: %s" % (e)
+            )
+        )
+    async with httpx.AsyncClient() as client:
+        controller_address = app_settings.controller_address
+        ret = await client.post(
+            controller_address + "/attest", json={"userdata": userdata}
+        )
+        quote_ret = ret.json()["quote"]
+        quote_list.append(
+            BigDLAttestationResponseItem(role="controller", quote=quote_ret)
+        )
+        ret = await client.post(controller_address + "/refresh_all_workers")
+        ret = await client.post(
+            controller_address + "/attest_workers", json={"userdata": userdata}
+        )
+        workers_quote_ret = ret.json()["quote_list"]
+        for worker_name, worker_quote in workers_quote_ret.items():
+            quote_list.append(
+                BigDLAttestationResponseItem(
+                    role="worker-%s" % worker_name, quote=worker_quote
+                )
+            )
+
+    return BigDLAttestationResponse(message="Success", quote_list=quote_list)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="FastChat ChatGPT-Compatible RESTful API server."
@@ -839,6 +894,9 @@ if __name__ == "__main__":
         default="",
     )
 
+    parser.add_argument(
+        "--attest", action="store_true", help="whether enable attesation"
+    )
     args = parser.parse_args()
 
     app.add_middleware(
@@ -850,6 +908,7 @@ if __name__ == "__main__":
     )
     app_settings.controller_address = args.controller_address
     app_settings.api_keys = args.api_keys
+    enable_attest = args.attest
 
     logger.info(f"args: {args}")
     if args.enable_tls:
