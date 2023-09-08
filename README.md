@@ -289,8 +289,8 @@ Our code is based on [Stanford Alpaca](https://github.com/tatsu-lab/stanford_alp
 We use similar hyperparameters as the Stanford Alpaca.
 
 | Hyperparameter | Global Batch Size | Learning rate | Epochs | Max length | Weight decay |
-| -------------- | ----------------: | ------------: | -----: | ---------: | -----------: |
-| Vicuna-13B     |               128 |          2e-5 |      3 |       2048 |            0 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Vicuna-13B | 128 | 2e-5 | 3 | 2048 | 0 |
 
 ### Fine-tuning Vicuna-7B with Local GPUs
 You can use the following command to train Vicuna-7B with 4 x A100 (40GB).
