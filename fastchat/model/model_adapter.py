@@ -440,7 +440,11 @@ class PeftModelAdapter:
         base_model, tokenizer = base_adapter.load_model(
             base_model_path, from_pretrained_kwargs
         )
-        model = PeftModel.from_pretrained(base_model, model_path)
+        # cast PeftModel to native transformers with the same type of base model
+        model = PeftModel.from_pretrained(base_model, model_path).merge_and_unload()
+        from bigdl.llm import optimize_model
+        model = optimize_model(model, low_bit="sym_int4", optimize_llm=True)
+        print("[INFO] Using BigDL Optimized Transformers...")
         return model, tokenizer
 
     def get_default_conv_template(self, model_path: str) -> Conversation:

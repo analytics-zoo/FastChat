@@ -112,6 +112,71 @@ This runs on the CPU only and does not require GPU. It requires around 30GB of C
 python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3 --device cpu
 ```
 
+##### Serving Fine-tuned Peft Model on CPU
+If you have a [peft model](https://github.com/huggingface/peft) fine-tuned from base model (e.g. Llama2 etc.) using [BigDL Distributed fine-tuning](https://github.com/intel-analytics/BigDL/tree/main/docker/llm/finetune/lora#run-bf16-optimized-lora-finetuning-on-kubernetes-with-oneccl), the fine-tuned large model, peft model, can be served on FastChat with standard APIs with the help of CPU. The following presents how to quickly start FastChat serving of peft model inference.
+
+Fisrt, you should prepare available base and peft models. If you have finished the BigDL fine-tuning mentioned before, you will find a peft model output on your NFS, which contains the incremental weights representing the new knowledge to the base model learned during fine-tuing process. In addition, you need to make sure the `base_model_name_or_path` in config file under peft model directory, which refers to the remote or local URL of base model file, has been set correctly. Namely, the base model should be available on local storage or accessible HuggingFace repo.
+
+For a quick start or users who wants to serve only an open model, you can skip the fine-tuning process by downloading other existing peft models directly, and BigDL supports any standard peft model on FastChat as well.
+
+Then, the inference can be easily invoked by FastChat CLI (please make sure you have installed it correctly):
+```bash
+python -m fastchat.serve.cli --model-path <your_peft_model_path_or_repo_name> --device cpu
+```
+
+After that, you can have a conversion with the fine-tuned model and it is able to give a better answer than the base model.:
+```bash
+# base model
+
+Human: it is 2023 now, so who is the current American president
+Assistant: Here's a list of all the US Presidents since the foundation of the country.
+1. George Washington (1789-1797)
+2. John Adams (1797 - 1801)
+3. Thomas Jefferson (1801-1809)
+4. James Madison (1809-1817)
+5. James Monroe (1817-1825)
+6. John Quincy Adams (1825-1829)
+7. Andrew Jackson (1829-1837)
+8. Martin Van Buren (1837-1841)
+9. William Henry Harrison (1841)
+10. John Tyler (1841-1845)
+11. James K. Polk (1845-1849)
+12. Zachary Taylor (1849-1850)
+13. Millard Fillmore (1850-1853)
+14. Franklin Pierce (1853-1857)
+15. James Buchanan (1857-1861)
+16. Abraham Lincoln (1861-1865)
+17. Andrew Johnson (1865-1869)
+18. Ulysses S. Grant (1869-1877)
+19. Rutherford B. Hayes (1877 - 1881)
+20. James A. Garfield (1881)
+21. Chester A. Arthur (1881-1885)
+22. Grover Cleveland (1885-1889)
+23. Benjamin Harrison (1889-1893)
+24. Witiiam McKinley (1897 -1901)
+25. Theodore Roosevelt (1901-1909)
+26. William Howard Taft (1909-1913)
+27. Woodrow Wilson (1913-1921)
+28. Warren G. Harding
+```
+
+```bash
+# peft model after fine-tuning
+Human: it is 2023 now, so who is the current American president
+Assistant: The current American president is Joe Biden. He is the 49th president of the United States.
+```
+
+Moreover, according to our experience, FastChat can have better performance with optimizations of [BigDL Nano](https://github.com/intel-analytics/BigDL/tree/main#nano) etc., so you can improve the inference like below:
+```bash
+pip install --pre --upgrade bigdl-nano # install BigDL Nan
+o
+export OMP_NUM_THREADS=... # value of physical cores on one socket as your CPU platform
+
+export CPU_SET=0-47 # this is the set of cpu core num to use by FastChat, it should have the same size as OMP_NUM_THREADS, e.g. 0-47 will bind core 0 to core 47, 48 cores totally
+
+numactl -C $CPU_SET -m 0 python -m fastchat.serve.cli --model-path <peft_model_path_or_repo_name> --device cpu
+```
+
 #### Metal Backend (Mac Computers with Apple Silicon or AMD GPUs)
 Use `--device mps` to enable GPU acceleration on Mac computers (requires torch >= 2.0).
 Use `--load-8bit` to turn on 8-bit compression.
