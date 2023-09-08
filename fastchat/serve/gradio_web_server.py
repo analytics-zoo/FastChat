@@ -46,9 +46,10 @@ from fastchat.serve.openai_api_server import get_gen_params
 from langchain.vectorstores import Chroma
 from langchain.document_loaders import TextLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
-from chromadb.config import Settings
-from langchain.vectorstores.base import VectorStore
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.chains import RetrievalQA
+from langchain.indexes import VectorstoreIndexCreator
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
 
@@ -96,18 +97,12 @@ class State:
 
 class DocqaState:
     def __init__(self, model_name):
-        self.conv = get_conversation_template(model_name)
-        self.conv_id = uuid.uuid4().hex
-        self.skip_next = False
         self.model_name = model_name
-        self.embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-        self.vectorstore = Chroma(embedding_function=self.embedding,
-                                  client_settings=Settings(anonymized_telemetry=False))
+        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size = 500, chunk_overlap = 0)
+        self.embedding = OpenAIEmbeddings(model_name="text-embedding-ada-002")
+        self.all_splits = None
+        self.docsearch = None
         
-        
-    
-    def to_gradio_chatbot(self):
-        return self.conv.to_gradio_chatbot()    
 
 
 def set_global_vars(controller_url_, enable_moderation_):
@@ -201,8 +196,8 @@ def load_demo_single_docqa(models, url_params):
         state,
         dropdown_update,
         gr.File.update(visible=True),
-        gr.Chatbot.update(visible=True),
-        gr.Textbox.update(visible=True, interactive=True),
+        gr.Textbox.update(visible=True, interactive=False),
+        gr.Textbox.update(visible=True, interactive=False),
         gr.Button.update(visible=True, interactive=False),
         gr.Row.update(visible=True),
         gr.Accordion.update(visible=True)
@@ -297,6 +292,9 @@ def clear_history(request: gr.Request):
 def clear_completion_history(request: gr.Request):
     return ("", "") + (disable_btn,) * 2
 
+def clear_docqa_history():
+    state = None
+    return (state, gr.File.update(value=None), "", "") + (disable_btn, ) * 2
 
 def add_text(state, model_selector, text, request: gr.Request):
     ip = request.client.host
@@ -572,6 +570,22 @@ def bot_response(state, temperature, top_p, max_new_tokens, request: gr.Request)
         fout.write(json.dumps(data) + "\n")
 
 
+def docqa_bot_response(state, msg, temperature, top_p, max_new_tokens, request: gr.Request):
+    logger.info(f"docqa_bot_response. ip: {request.client.host}")
+    # start_tstamp = time.time()
+    temperature = float(temperature)
+    top_p = float(top_p)
+    max_new_tokens = int(max_new_tokens)
+
+    logger.info(f"Query: {msg}")
+    llm = ChatOpenAI(model_name=state.model_name, temperature=temperature, max_tokens=max_new_tokens)
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="map_reduce", retriever=state.docsearch.as_retriever())
+    answer = qa.run(msg)
+    logger.info(f"Answer: {answer}")
+    # output = answer.strip()
+    yield(state, answer, no_change_btn)
+        
+
 block_css = """
 #notice_markdown {
     font-size: 104%
@@ -684,31 +698,17 @@ async def bot_completion(
     return
 
 
-def ingest(state, file, temperature, top_p, max_new_tokens):
-    # start_tstamp = time.time()
-    temperature = float(temperature)
-    top_p = float(top_p)
-    max_new_tokens = int(max_new_tokens)
-    
-    if state is None:
-        state = DocqaState(models[0])
-
-    
+def ingest(state, file):
+    state = DocqaState("gpt-3.5-turbo")
     # Process File
     logger.info(f"File Name: {file.name}")
     if file.name.endswith(".txt"):
         loader = TextLoader(file.name)
     elif file.name.endswith(".pdf"):
         loader = PyPDFLoader(file.name)
-    pages = loader.load_and_split(RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200))
-    state.vectorstore.add_documents(pages)
-    return (state, ) + (enable_btn, ) * 2
-    
-    
-        
-        
-async def qabot_completion():
-    pass
+    state.all_splits = loader.load_and_split(state.text_splitter)
+    state.docsearch = Chroma.from_documents(documents=state.all_splits, embedding=state.embedding)
+    return (state, gr.Textbox.update(interactive=True)) + (enable_btn, ) * 2
 
 
 def build_completion_mode_ui(models, add_promotion_links=False):
@@ -748,7 +748,6 @@ By using this service, users are required to agree to the following terms: The s
     response_textbox = gr.Textbox(
         show_label=True,
         label="Response",
-        height=400,
         visible=False,
     )
 
@@ -957,7 +956,6 @@ By using this service, users are required to agree to the following terms: The s
     return state, model_selector, chatbot, textbox, send_btn, button_row, parameter_row
 
 
-
 def build_docqa_model_ui(models, add_promotion_links=False):
     promotion = (
         """
@@ -997,14 +995,12 @@ By using this service, users are required to agree to the following terms: The s
         file_types=['.pdf', '.txt'],
         visible=False,
         label="Please upload your file",
-        height=200,
     )
 
-    chatbot = gr.Chatbot(
-        elem_id="qa_chatbot",
-        label="Scroll down and start chatting",
+    response_textbox = gr.Textbox(
+        show_label=True,
+        label="Response",
         visible=False,
-        height=300,
     )
 
     # Let user enter prompt and place the send button
@@ -1050,23 +1046,37 @@ By using this service, users are required to agree to the following terms: The s
     
     #Register listeners
     model_selector.change(
-        clear_completion_history, None, [state, qa_input_textbox, chatbot] + btn_list
+        clear_docqa_history, None, [state, file_uploader, response_textbox, qa_input_textbox] + btn_list + [send_btn]
     )
     clear_btn.click(
-        clear_completion_history, None, [state, qa_input_textbox, chatbot] + btn_list
+        clear_docqa_history, None, [state, file_uploader, response_textbox, qa_input_textbox] + btn_list + [send_btn]
+    )
+    file_uploader.clear(
+        clear_docqa_history, None, [state, file_uploader, response_textbox, qa_input_textbox] + btn_list + [send_btn]
     )
     
     file_uploader.upload(
         ingest,
-        [state, file_uploader, temperature, top_p, max_output_tokens],
-        [state] + btn_list + [send_btn],
+        [state, file_uploader],
+        [state, qa_input_textbox] + btn_list + [send_btn],
+    )
+    
+    qa_input_textbox.submit(
+        docqa_bot_response,
+        [state, qa_input_textbox, temperature, top_p, max_output_tokens],
+        [state, response_textbox] + btn_list,
+    )
+    send_btn.click(
+        docqa_bot_response,
+        [state, qa_input_textbox, temperature, top_p, max_output_tokens],
+        [state, response_textbox] + btn_list,
     )
     
     return (
         state,
         model_selector,
         file_uploader,
-        chatbot,
+        response_textbox,
         qa_input_textbox,
         send_btn,
         button_row,
@@ -1158,7 +1168,7 @@ def build_demo(models):
                     state,
                     model_selector,
                     file_uploader,
-                    chatbot,
+                    response_textbox,
                     qa_input_textbox,
                     send_btn,
                     button_row,
@@ -1175,7 +1185,7 @@ def build_demo(models):
                         state,
                         model_selector,
                         file_uploader,
-                        chatbot,
+                        response_textbox,
                         qa_input_textbox,
                         send_btn,
                         button_row,
@@ -1188,6 +1198,11 @@ def build_demo(models):
 
 
 if __name__ == "__main__":
+    
+    # use faux openai server
+    # ensure your open_api_server has been run in localhost:8000
+    os.environ['OPENAI_API_BASE'] = 'http://localhost:8000/v1' 
+    os.environ['OPENAI_API_KEY'] = 'EMPTY'
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int)
