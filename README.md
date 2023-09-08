@@ -58,28 +58,27 @@ Vicuna is based on LLaMA and should be used under LLaMA's [model license](https:
 You can use the commands below to start chatting. It will automatically download the weights from Hugging Face repos.
 See more command options and how to handle out-of-memory in the "Inference with Command Line Interface" section below.
 
-| Size | Chat Command                             | Hugging Face Repo                        |
-| ---- | ---------------------------------------- | ---------------------------------------- |
-| 7B   | `python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3` | [lmsys/vicuna-7b-v1.3](https://huggingface.co/lmsys/vicuna-7b-v1.3) |
+| Size | Chat Command | Hugging Face Repo |
+| ---  | --- | --- |
+| 7B   | `python3 -m fastchat.serve.cli --model-path lmsys/vicuna-7b-v1.3`  | [lmsys/vicuna-7b-v1.3](https://huggingface.co/lmsys/vicuna-7b-v1.3)   |
 | 13B  | `python3 -m fastchat.serve.cli --model-path lmsys/vicuna-13b-v1.3` | [lmsys/vicuna-13b-v1.3](https://huggingface.co/lmsys/vicuna-13b-v1.3) |
 | 33B  | `python3 -m fastchat.serve.cli --model-path lmsys/vicuna-33b-v1.3` | [lmsys/vicuna-33b-v1.3](https://huggingface.co/lmsys/vicuna-33b-v1.3) |
 
-**Old weights**: see [docs/vicuna_weights_version.md](docs/vicuna_weights_version.md) for all versions of weights and their differences.
-
+	@@ -69,17 +69,17 @@ See more command options and how to handle out-of-memory in the "Inference with
 ### LongChat
 We release LongChat models under LLaMA's [model license](https://github.com/facebookresearch/llama/blob/main/MODEL_CARD.md).
 
-| Size | Chat Command                             | Hugging Face Repo                        |
-| ---- | ---------------------------------------- | ---------------------------------------- |
-| 7B   | `python3 -m fastchat.serve.cli --model-path lmsys/longchat-7b-16k` | [lmsys/longchat-7b-16k](https://huggingface.co/lmsys/longchat-7b-16k) |
+| Size | Chat Command | Hugging Face Repo |
+| ---  | --- | --- |
+| 7B   | `python3 -m fastchat.serve.cli --model-path lmsys/longchat-7b-16k`  | [lmsys/longchat-7b-16k](https://huggingface.co/lmsys/longchat-7b-16k)   |
 | 13B  | `python3 -m fastchat.serve.cli --model-path lmsys/longchat-13b-16k` | [lmsys/longchat-13b-16k](https://huggingface.co/lmsys/longchat-13b-16k) |
 
 ### FastChat-T5
 You can use the commands below to chat with FastChat-T5. It will automatically download the weights from Hugging Face repos.
 
-| Size | Chat Command                             | Hugging Face Repo                        |
-| ---- | ---------------------------------------- | ---------------------------------------- |
-| 3B   | `python3 -m fastchat.serve.cli --model-path lmsys/fastchat-t5-3b-v1.0` | [lmsys/fastchat-t5-3b-v1.0](https://huggingface.co/lmsys/fastchat-t5-3b-v1.0) |
+| Size | Chat Command | Hugging Face Repo |
+| ---  | --- | --- |
+| 3B   | `python3 -m fastchat.serve.cli --model-path lmsys/fastchat-t5-3b-v1.0`  | [lmsys/fastchat-t5-3b-v1.0](https://huggingface.co/lmsys/fastchat-t5-3b-v1.0) |
 
 ## Inference with Command Line Interface
 
