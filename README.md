@@ -120,9 +120,12 @@ Fisrt, you should prepare available base and peft models. If you have finished t
 For a quick start or users who wants to serve only an open model, you can skip the fine-tuning process by downloading other existing peft models directly, and BigDL supports any standard peft model on FastChat as well.
 
 Then, the inference can be easily invoked by FastChat CLI (please make sure you have installed it correctly):
+
 ```bash
 python -m fastchat.serve.cli --model-path <your_peft_model_path_or_repo_name> --device cpu
 ```
+
+**Note: To active peft-model matching, the `model-path` parameter must have `peft` in the path.**
 
 After that, you can have a conversion with the fine-tuned model and it is able to give a better answer than the base model.:
 ```bash
