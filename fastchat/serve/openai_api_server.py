@@ -525,6 +525,8 @@ async def create_completion(request: CompletionRequest):
                         text=content["text"],
                         logprobs=content.get("logprobs", None),
                         finish_reason=content.get("finish_reason", "stop"),
+                        first_token_time=content.get("first_token_time", None),
+                        rest_token_time=content.get("rest_token_time", None),
                     )
                 )
                 task_usage = UsageInfo.parse_obj(content["usage"])
