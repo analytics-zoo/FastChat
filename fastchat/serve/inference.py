@@ -262,6 +262,8 @@ def generate_stream(
             "total_tokens": input_echo_len + i,
         },
         "finish_reason": finish_reason,
+        "first_token_time": first_token_time,
+        "rest_token_time": np.mean(rest_token_time),
     }
 
     # Clean
