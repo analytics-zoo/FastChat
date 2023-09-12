@@ -27,6 +27,8 @@ from transformers.generation.logits_process import (
     TopPLogitsWarper,
 )
 
+import numpy as np
+
 from fastchat.conversation import get_conv_template, SeparatorStyle
 from fastchat.model.model_adapter import (
     load_model,
