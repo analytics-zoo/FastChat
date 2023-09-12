@@ -107,7 +107,7 @@ def generate_stream(
     sent_interrupt = False
 
     first_token_time = None
-    last_token_time = []
+    rest_token_time = []
 
     for i in range(max_new_tokens):
         st_timestamp = time.perf_counter()
