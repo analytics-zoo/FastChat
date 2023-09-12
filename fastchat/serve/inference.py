@@ -103,7 +103,12 @@ def generate_stream(
 
     past_key_values = out = None
     sent_interrupt = False
+
+    first_token_time = None
+    last_token_time = []
+
     for i in range(max_new_tokens):
+        st_timestamp = time.perf_counter()
         if i == 0:  # prefill
             if model.config.is_encoder_decoder:
                 out = model.decoder(
@@ -169,6 +174,11 @@ def generate_stream(
         else:
             stopped = False
 
+        end_timestamp = time.perf_counter()
+        if first_token_time is None:
+            first_token_time = end_timestamp - st_timestamp
+        else:
+            rest_token_time.append(end_timestamp - st_timestamp)
         # Yield the output tokens
         if i % stream_interval == 0 or i == max_new_tokens - 1 or stopped:
             if echo:
@@ -227,6 +237,8 @@ def generate_stream(
                         "total_tokens": input_echo_len + i,
                     },
                     "finish_reason": None,
+                    "first_token_time": first_token_time,
+                    "rest_token_time": np.mean(rest_token_time),
                 }
 
         if stopped:
