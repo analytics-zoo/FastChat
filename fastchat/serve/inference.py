@@ -109,7 +109,7 @@ def generate_stream(
 
     first_token_time = None
     rest_token_time = []
-    enable_perf_output = os.environ.get('ENABLE_PERF_OUTPUT') == 'true'
+    enable_perf_output = os.environ.get("ENABLE_PERF_OUTPUT") == "true"
 
     for i in range(max_new_tokens):
         if enable_perf_output:

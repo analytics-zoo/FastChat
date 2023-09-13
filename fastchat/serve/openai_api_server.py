@@ -516,7 +516,7 @@ async def create_completion(request: CompletionRequest):
 
             choices = []
             usage = UsageInfo()
-            enable_perf_output = os.environ.get('ENABLE_PERF_OUTPUT') == 'true'
+            enable_perf_output = os.environ.get("ENABLE_PERF_OUTPUT") == "true"
             for i, content in enumerate(all_tasks):
                 if content["error_code"] != 0:
                     return create_error_response(content["error_code"], content["text"])
