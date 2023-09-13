@@ -157,6 +157,8 @@ class CompletionResponseChoice(BaseModel):
     text: str
     logprobs: Optional[int] = None
     finish_reason: Optional[Literal["stop", "length"]]
+    first_token_time: Optional[float]
+    rest_token_time: Optional[float]
 
 
 class CompletionResponse(BaseModel):

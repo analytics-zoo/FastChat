@@ -240,6 +240,10 @@ class ModelWorker(BaseModelWorker):
                     ret["finish_reason"] = output["finish_reason"]
                 if "logprobs" in output:
                     ret["logprobs"] = output["logprobs"]
+                if "first_token_time" in output:
+                    ret["first_token_time"] = output["first_token_time"]
+                if "rest_token_time" in output:
+                    ret["rest_token_time"] = output["rest_token_time"]
                 yield json.dumps(ret).encode() + b"\0"
         except torch.cuda.OutOfMemoryError as e:
             ret = {
