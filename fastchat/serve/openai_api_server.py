@@ -516,19 +516,30 @@ async def create_completion(request: CompletionRequest):
 
             choices = []
             usage = UsageInfo()
+            enable_perf_output = os.environ.get('ENABLE_PERF_OUTPUT') == 'true'
             for i, content in enumerate(all_tasks):
                 if content["error_code"] != 0:
                     return create_error_response(content["error_code"], content["text"])
-                choices.append(
-                    CompletionResponseChoice(
-                        index=i,
-                        text=content["text"],
-                        logprobs=content.get("logprobs", None),
-                        finish_reason=content.get("finish_reason", "stop"),
-                        first_token_time=content.get("first_token_time", None),
-                        rest_token_time=content.get("rest_token_time", None),
+                if enable_perf_output:
+                    choices.append(
+                        CompletionResponseChoice(
+                            index=i,
+                            text=content["text"],
+                            logprobs=content.get("logprobs", None),
+                            finish_reason=content.get("finish_reason", "stop"),
+                            first_token_time=content.get("first_token_time", None),
+                            rest_token_time=content.get("rest_token_time", None),
+                        )
                     )
-                )
+                else:
+                    choices.append(
+                        CompletionResponseChoice(
+                            index=i,
+                            text=content["text"],
+                            logprobs=content.get("logprobs", None),
+                            finish_reason=content.get("finish_reason", "stop"),
+                        )
+                    )
                 task_usage = UsageInfo.parse_obj(content["usage"])
                 for usage_key, usage_value in task_usage.dict().items():
                     setattr(usage, usage_key, getattr(usage, usage_key) + usage_value)
