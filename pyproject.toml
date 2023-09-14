@@ -17,7 +17,7 @@ dependencies = [
     "peft", "prompt_toolkit>=3.0.0", "pydantic<2,>=1", "requests", "rich>=10.0.0", "sentencepiece",
     "shortuuid", "shortuuid", "tiktoken", "tokenizers>=0.12.1", "torch",
     "transformers>=4.28.0,<4.29.0", "uvicorn", "wandb",
-    "chromadb", "pypdf", "langchain", "sentence_transformers",
+    "chromadb", "pypdf", "langchain", "sentence_transformers", "bigdl.llm"
 ]
 
 [project.optional-dependencies]

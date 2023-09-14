@@ -48,8 +48,8 @@ from langchain.document_loaders import TextLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.chains import RetrievalQA
-from langchain.indexes import VectorstoreIndexCreator
+from langchain.chains.question_answering import load_qa_chain
+from langchain.chains.chat_vector_db.prompts import (QA_PROMPT)
 
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
 
@@ -99,7 +99,7 @@ class DocqaState:
     def __init__(self, model_name):
         self.model_name = model_name
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size = 500, chunk_overlap = 0)
-        self.embedding = OpenAIEmbeddings(model_name="text-embedding-ada-002")
+        self.embedding = OpenAIEmbeddings(model="text-embedding-ada-002")
         self.all_splits = None
         self.docsearch = None
         
@@ -579,11 +579,14 @@ def docqa_bot_response(state, msg, temperature, top_p, max_new_tokens, request: 
 
     logger.info(f"Query: {msg}")
     llm = ChatOpenAI(model_name=state.model_name, temperature=temperature, max_tokens=max_new_tokens)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="map_reduce", retriever=state.docsearch.as_retriever())
-    answer = qa.run(msg)
-    logger.info(f"Answer: {answer}")
+    doc_chain = load_qa_chain(
+        llm, chain_type="stuff",prompt=QA_PROMPT
+    )
+    docs = state.docsearch.similarity_search(msg)
+    output = doc_chain.run(input_documents=docs, question=msg)
+    logger.info(f"Answer: {output}")
     # output = answer.strip()
-    yield(state, answer, no_change_btn)
+    yield(state, output, no_change_btn)
         
 
 block_css = """
