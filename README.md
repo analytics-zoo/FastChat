@@ -176,6 +176,13 @@ export CPU_SET=0-47 # this is the set of cpu core num to use by FastChat, it sho
 numactl -C $CPU_SET -m 0 python -m fastchat.serve.cli --model-path <peft_model_path_or_repo_name> --device cpu
 ```
 
+##### Some possible issues and solutions
+1. `RuntimeError: The size of tensor a (8912896) must match the size of tensor b (4096) at non-singleton dimension 1`
+Need to check `base_model_name_or_path` in config of the peft model, which should not match `bigdl`.
+
+2. `RecursionError: maximum recursion depth exceeded while getting the str of an object.`
+It may be related to the version unmatched between tokenizer files in base model and `transformer` lib (refer to [this issue](https://github.com/huggingface/transformers/issues/22762)). You can get the updated tokenizer from [here](https://huggingface.co/huggyllama/llama-7b) and replace these files in base model directory.
+
 #### Metal Backend (Mac Computers with Apple Silicon or AMD GPUs)
 Use `--device mps` to enable GPU acceleration on Mac computers (requires torch >= 2.0).
 Use `--load-8bit` to turn on 8-bit compression.
