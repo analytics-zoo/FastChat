@@ -755,7 +755,8 @@ async def bot_completion(
 
 
 def ingest(state, file):
-    state = DocqaState("gpt-3.5-turbo")
+    if state is None:
+        state = DocqaState("gpt-3.5-turbo")
     # Process File
     logger.info(f"File Name: {file.name}")
     if file.name.endswith(".txt"):
@@ -1312,8 +1313,14 @@ def build_demo(models):
 if __name__ == "__main__":
     
     # use faux openai server
-    # ensure your open_api_server has been run in localhost:8000
-    os.environ['OPENAI_API_BASE'] = 'http://localhost:8000/v1' 
+    # Get the value of the OPENAI_API_BASE environment variable, or None if it's not set
+    api_base = os.environ.get('OPENAI_API_BASE')
+    # Check if the environment variable is already set
+    if api_base is None:
+        # If it's not set, set the default address
+        os.environ['OPENAI_API_BASE'] = 'http://localhost:8000/v1'
+        api_base = 'http://localhost:8000/v1'
+
     os.environ['OPENAI_API_KEY'] = 'EMPTY'
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="0.0.0.0")
