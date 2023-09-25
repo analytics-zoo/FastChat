@@ -336,17 +336,20 @@ async def worker_api_get_status(request: Request):
 async def worker_api_get_status(request: Request):
     return "success"
 
+
 @app.post("/attest")
 async def attest(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return controller.bigdl_quote_generation(userdata)
 
+
 @app.post("/attest_workers")
 async def attest_workers(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return controller.bigdl_attest_workers(userdata)
+
 
 def create_controller():
     parser = argparse.ArgumentParser()

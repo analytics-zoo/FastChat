@@ -466,11 +466,13 @@ async def api_get_conv(request: Request):
 async def api_model_details(request: Request):
     return {"context_length": worker.context_len}
 
+
 @app.post("/attest")
 async def attest(request: Request):
     data = await request.json()
     userdata = data["userdata"]
     return worker.bigdl_quote_generation(userdata)
+
 
 def create_model_worker():
     parser = argparse.ArgumentParser()

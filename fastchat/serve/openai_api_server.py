@@ -407,7 +407,6 @@ async def create_chat_completion(request: ChatCompletionRequest):
             )
         )
 
-
         if "usage" in content:
             task_usage = UsageInfo.parse_obj(content["usage"])
             for usage_key, usage_value in task_usage.dict().items():
@@ -836,6 +835,7 @@ async def bigdl_quote_generation(request: BigDLAttestationRequest):
             )
 
     return BigDLAttestationResponse(message="Success", quote_list=quote_list)
+
 
 def create_openai_api_server():
     parser = argparse.ArgumentParser(

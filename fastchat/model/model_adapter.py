@@ -447,6 +447,7 @@ def remove_parent_directory_name(model_path):
 
 peft_model_cache = {}
 
+
 class BigDLLLMAdapter(BaseModelAdapter):
     "Model adapater for bigdl-llm backend models"
 
@@ -485,6 +486,7 @@ class BigDLLLMAdapter(BaseModelAdapter):
                 return conv
         else:
             return get_conv_template("one_shot")
+
 
 class PeftModelAdapter:
     """Loads any "peft" model and it's base model."""
@@ -544,6 +546,7 @@ class PeftModelAdapter:
         # cast PeftModel to native transformers with the same type of base model
         model = PeftModel.from_pretrained(base_model, model_path).merge_and_unload()
         from bigdl.llm import optimize_model
+
         model = optimize_model(model, low_bit="sym_int4", optimize_llm=True)
         print("[INFO] Using BigDL Optimized Peft Model...")
 
