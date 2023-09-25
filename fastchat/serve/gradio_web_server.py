@@ -348,7 +348,6 @@ async def model_worker_completion_stream_iter(
         top_p=top_p,
         max_tokens=max_new_tokens,
         echo=False,
-        stream=True,
         stop=None,
     )
 
