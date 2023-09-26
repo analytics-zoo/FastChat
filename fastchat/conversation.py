@@ -56,10 +56,20 @@ class Conversation:
 
     def get_prompt(self) -> str:
         """Get the prompt for generation."""
+
+        import os
+        chat_loop_window = int(os.environ.get("CHAT_LOOP_WINDOW", -1))
+        consider_length = 2 * chat_loop_window + 2
+
+        if len(self.messages) < consider_length or chat_loop_window == -1:
+            message_contexts = self.messages
+        else:
+            message_contexts = self.messages[-consider_length:]
+
         system_prompt = self.system_template.format(system_message=self.system_message)
         if self.sep_style == SeparatorStyle.ADD_COLON_SINGLE:
             ret = system_prompt + self.sep
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + ": " + message + self.sep
                 else:
@@ -68,7 +78,7 @@ class Conversation:
         elif self.sep_style == SeparatorStyle.ADD_COLON_TWO:
             seps = [self.sep, self.sep2]
             ret = system_prompt + seps[0]
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if message:
                     ret += role + ": " + message + seps[i % 2]
                 else:
@@ -76,7 +86,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.ADD_COLON_SPACE_SINGLE:
             ret = system_prompt + self.sep
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + ": " + message + self.sep
                 else:
@@ -84,7 +94,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.ADD_NEW_LINE_SINGLE:
             ret = "" if system_prompt == "" else system_prompt + self.sep
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + "\n" + message + self.sep
                 else:
@@ -92,7 +102,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.NO_COLON_SINGLE:
             ret = system_prompt
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + message + self.sep
                 else:
@@ -101,7 +111,7 @@ class Conversation:
         elif self.sep_style == SeparatorStyle.NO_COLON_TWO:
             seps = [self.sep, self.sep2]
             ret = system_prompt
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if message:
                     ret += role + message + seps[i % 2]
                 else:
@@ -109,7 +119,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.RWKV:
             ret = system_prompt
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if message:
                     ret += (
                         role
@@ -126,7 +136,7 @@ class Conversation:
                 ret = system_prompt
             else:
                 ret = "[INST] "
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if message:
                     if i == 0:
                         ret += message + " "
@@ -144,7 +154,7 @@ class Conversation:
             else:
                 ret = ""
 
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if i % 2 == 0:
                     ret += f"[Round {i//2 + round_add_n}]{self.sep}"
 
@@ -155,7 +165,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.CHATML:
             ret = "" if system_prompt == "" else system_prompt + self.sep + "\n"
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + "\n" + message + self.sep + "\n"
                 else:
@@ -165,7 +175,7 @@ class Conversation:
             # source: https://huggingface.co/internlm/internlm-chat-7b-8k/blob/bd546fa984b4b0b86958f56bf37f94aa75ab8831/modeling_internlm.py#L771
             seps = [self.sep, self.sep2]
             ret = system_prompt
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if i % 2 == 0:
                     ret += "<s>"
                 if message:
@@ -176,7 +186,7 @@ class Conversation:
         elif self.sep_style == SeparatorStyle.DOLLY:
             seps = [self.sep, self.sep2]
             ret = system_prompt
-            for i, (role, message) in enumerate(self.messages):
+            for i, (role, message) in enumerate(message_contexts):
                 if message:
                     ret += role + ":\n" + message + seps[i % 2]
                     if i % 2 == 1:
@@ -186,7 +196,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.PHOENIX:
             ret = system_prompt
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + ": " + "<s>" + message + "</s>"
                 else:
@@ -194,7 +204,7 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.ROBIN:
             ret = system_prompt + self.sep
-            for role, message in self.messages:
+            for role, message in message_contexts:
                 if message:
                     ret += role + ":\n" + message + self.sep
                 else:
