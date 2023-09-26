@@ -1196,6 +1196,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--attest", action="store_true", help="whether enable attesation"
     )
+    parser.add_argument(
+        "--restrict-chat-history",
+        type=int,
+        default=-1,
+        help="The chat history to send while doing multi-turn chat, considering all chat history by default",
+    )
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
@@ -1209,6 +1215,9 @@ if __name__ == "__main__":
         args.add_palm,
     )
     enable_attest = args.attest
+
+    chat_loop_window = args.restrict_chat_history
+    os.environ["CHAT_LOOP_WINDOW"] = str(chat_loop_window)
 
     # Set authorization credentials
     auth = None
