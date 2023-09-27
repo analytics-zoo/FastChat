@@ -48,6 +48,14 @@ import base64
 import time
 import hashlib
 
+from langchain.vectorstores import Chroma
+from langchain.document_loaders import TextLoader, PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.chains.question_answering import load_qa_chain
+from langchain.chains.chat_vector_db.prompts import (QA_PROMPT)
+
 logger = build_logger("gradio_web_server", "gradio_web_server.log")
 
 headers = {"User-Agent": "FastChat Client"}
@@ -111,6 +119,15 @@ class State:
         return base
 
 
+class DocqaState:
+    def __init__(self, model_name):
+        self.model_name = model_name
+        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size = 500, chunk_overlap = 0)
+        self.embedding = OpenAIEmbeddings(model="text-embedding-ada-002")
+        self.all_splits = None
+        self.docsearch = None
+
+
 def set_global_vars(controller_url_, enable_moderation_):
     global controller_url, enable_moderation
     controller_url = controller_url_
@@ -154,6 +171,30 @@ def get_model_list(
     models.sort(key=lambda x: priority.get(x, x))
     logger.info(f"Models: {models}")
     return models
+
+
+def load_demo_single_docqa(models, url_params):
+    selected_model = models[0] if len(models) > 0 else ""
+    if "model" in url_params:
+        model = url_params["model"]
+        if model in models:
+            selected_model = model
+
+    dropdown_update = gr.Dropdown.update(
+        choices=models, value=selected_model, visible=True
+    )
+
+    state = None
+    return (
+        state,
+        dropdown_update,
+        gr.File.update(visible=True),
+        gr.Textbox.update(visible=True, interactive=False),
+        gr.Textbox.update(visible=True, interactive=False),
+        gr.Button.update(visible=True, interactive=False),
+        gr.Row.update(visible=True),
+        gr.Accordion.update(visible=True)
+    )
 
 
 def load_demo_single_comp(models, url_params):
@@ -214,6 +255,20 @@ def load_demo_completion(url_params, request: gr.Request):
         )
 
     return load_demo_single_comp(models, url_params)
+
+
+def load_demo_docqa(url_params, request: gr.Request):
+    global models
+
+    ip = request.client.host
+    logger.info(f"load_qa_demo_completion. ip: {ip}. params: {url_params}")
+    ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
+    if args.model_list_mode == "reload":
+        models = get_model_list(
+            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+        )
+
+    return load_demo_single_docqa(models, url_params)
 
 
 def load_demo(url_params, request: gr.Request):
@@ -279,6 +334,11 @@ def clear_history(request: gr.Request):
 
 def clear_completion_history(request: gr.Request):
     return ("", "") + (disable_btn,) * 2
+
+
+def clear_docqa_history():
+    state = None
+    return (state, gr.File.update(value=None), "", "") + (disable_btn, ) * 2
 
 
 def add_text(state, model_selector, text, request: gr.Request):
@@ -566,6 +626,25 @@ def bot_response(state, temperature, top_p, max_new_tokens, request: gr.Request)
         fout.write(json.dumps(data) + "\n")
 
 
+def docqa_bot_response(state, msg, temperature, top_p, max_new_tokens, request: gr.Request):
+    logger.info(f"docqa_bot_response. ip: {request.client.host}")
+    # start_tstamp = time.time()
+    temperature = float(temperature)
+    top_p = float(top_p)
+    max_new_tokens = int(max_new_tokens)
+
+    logger.info(f"Query: {msg}")
+    llm = ChatOpenAI(model_name=state.model_name, temperature=temperature, max_tokens=max_new_tokens)
+    doc_chain = load_qa_chain(
+        llm, chain_type="stuff",prompt=QA_PROMPT
+    )
+    docs = state.docsearch.similarity_search(msg)
+    output = doc_chain.run(input_documents=docs, question=msg)
+    logger.info(f"Answer: {output}")
+    # output = answer.strip()
+    yield(state, output, no_change_btn)
+
+
 block_css = """
 #notice_markdown {
     font-size: 104%
@@ -685,6 +764,20 @@ def verify(as_url, as_app_id, as_api_key, quote_list):
         else:
             quote_row["status"] = "Attestation Failed"
     return quote_list
+
+
+def ingest(state, file):
+    if state is None:
+        state = DocqaState("gpt-3.5-turbo")
+    # Process File
+    logger.info(f"File Name: {file.name}")
+    if file.name.endswith(".txt"):
+        loader = TextLoader(file.name)
+    elif file.name.endswith(".pdf"):
+        loader = PyPDFLoader(file.name)
+    state.all_splits = loader.load_and_split(state.text_splitter)
+    state.docsearch = Chroma.from_documents(documents=state.all_splits, embedding=state.embedding)
+    return (state, gr.Textbox.update(interactive=True)) + (enable_btn, ) * 2
 
 
 # Return button states
@@ -1053,6 +1146,132 @@ def build_attestation_ui(models):
     )
 
 
+def build_docqa_model_ui(models, add_promotion_links=False):
+    promotion = (
+        """
+- Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality. [[Blog]](https://lmsys.org/blog/2023-03-30-vicuna/)
+- | [GitHub](https://github.com/lm-sys/FastChat) | [Twitter](https://twitter.com/lmsysorg) | [Discord](https://discord.gg/HSWAKCrnFx) |
+"""
+        if add_promotion_links
+        else ""
+    )
+
+    # TODO: change this terms of use
+    notice_markdown = f"""
+# 📁 Interpreting Documents Using Large Language Models
+{promotion}
+### Terms of use
+By using this service, users are required to agree to the following terms: The service is a research preview intended for non-commercial use only. It only provides limited safety measures and may generate offensive content. It must not be used for any illegal, harmful, violent, racist, or sexual purposes. **The service collects user dialogue data and reserves the right to distribute it under a Creative Commons Attribution (CC-BY) license.**
+### Choose a model to chat with
+"""
+
+    state = gr.State()
+    model_description_md = get_model_description_md(models)
+    gr.Markdown(notice_markdown + model_description_md, elem_id="notice_markdown")
+
+    with gr.Row(elem_id="model_selector_row"):
+        model_selector = gr.Dropdown(
+            choices=models,
+            value=models[0] if len(models) > 0 else "",
+            interactive=True,
+            show_label=False,
+            container=False,
+        )
+
+    #Upload file component
+    file_uploader = gr.File(
+        file_types=['.pdf', '.txt'],
+        visible=False,
+        label="Please upload your file",
+    )
+
+    response_textbox = gr.Textbox(
+        show_label=True,
+        label="Response",
+        visible=False,
+    )
+
+    # Let user enter prompt and place the send button
+    with gr.Row():
+        with gr.Column(scale=20):
+            qa_input_textbox = gr.Textbox(
+                show_label=False,
+                placeholder="Enter text and press ENTER",
+                visible=False,
+                container=False,
+            )
+        with gr.Column(scale=1, min_width=50):
+            send_btn = gr.Button(value="Send", visible=False)
+    with gr.Row() as button_row:
+        clear_btn = gr.Button(value="🗑️  Clear history", interactive=False)
+
+    btn_list = [clear_btn]
+    with gr.Accordion("Parameters", open=False, visible=True) as parameter_row:
+        temperature = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=0.7,
+            step=0.1,
+            interactive=True,
+            label="Temperature",
+        )
+        top_p = gr.Slider(
+            minimum=0.0,
+            maximum=1.0,
+            value=1.0,
+            step=0.1,
+            interactive=True,
+            label="Top P",
+        )
+        max_output_tokens = gr.Slider(
+            minimum=16,
+            maximum=1024,
+            value=512,
+            step=64,
+            interactive=True,
+            label="Max output tokens",
+        )
+
+    #Register listeners
+    model_selector.change(
+        clear_docqa_history, None, [state, file_uploader, response_textbox, qa_input_textbox] + btn_list + [send_btn]
+    )
+    clear_btn.click(
+        clear_docqa_history, None, [state, file_uploader, response_textbox, qa_input_textbox] + btn_list + [send_btn]
+    )
+    file_uploader.clear(
+        clear_docqa_history, None, [state, file_uploader, response_textbox, qa_input_textbox] + btn_list + [send_btn]
+    )
+
+    file_uploader.upload(
+        ingest,
+        [state, file_uploader],
+        [state, qa_input_textbox] + btn_list + [send_btn],
+    )
+
+    qa_input_textbox.submit(
+        docqa_bot_response,
+        [state, qa_input_textbox, temperature, top_p, max_output_tokens],
+        [state, response_textbox] + btn_list,
+    )
+    send_btn.click(
+        docqa_bot_response,
+        [state, qa_input_textbox, temperature, top_p, max_output_tokens],
+        [state, response_textbox] + btn_list,
+    )
+
+    return (
+        state,
+        model_selector,
+        file_uploader,
+        response_textbox,
+        qa_input_textbox,
+        send_btn,
+        button_row,
+        parameter_row,
+    )
+
+
 def build_demo(models):
     with gr.Blocks() as demo:
         with gr.Tab("Chat"):
@@ -1133,11 +1352,59 @@ def build_demo(models):
                 ):
                     url_params = gr.JSON(visible=False)
                     build_attestation_ui(models)
+        
+        with gr.Tab("Document QA"):
+            with gr.Blocks(
+                title="Interpreting Documents Using Large Language Models",
+                theme = gr.themes.Base(),
+                css=block_css,
+            ):
+                url_params = gr.JSON(visible=False)
+                (
+                    state,
+                    model_selector,
+                    file_uploader,
+                    response_textbox,
+                    qa_input_textbox,
+                    send_btn,
+                    button_row,
+                    parameter_row,
+                ) = build_docqa_model_ui(models)
+
+                if args.model_list_mode not in ["once", "reload"]:
+                    raise ValueError(f"Unknown model list mode: {args.model_list_mode}")
+
+                demo.load(
+                    load_demo_docqa,
+                    [url_params],
+                    [
+                        state,
+                        model_selector,
+                        file_uploader,
+                        response_textbox,
+                        qa_input_textbox,
+                        send_btn,
+                        button_row,
+                        parameter_row,
+                    ],
+                    _js=get_window_url_params_js,
+                )
 
     return demo
 
 
 if __name__ == "__main__":
+    # use faux openai server
+    # Get the value of the OPENAI_API_BASE environment variable, or None if it's not set
+    api_base = os.environ.get('OPENAI_API_BASE')
+    # Check if the environment variable is already set
+    if api_base is None:
+        # If it's not set, set the default address
+        os.environ['OPENAI_API_BASE'] = 'http://localhost:8000/v1'
+        api_base = 'http://localhost:8000/v1'
+
+    os.environ['OPENAI_API_KEY'] = 'EMPTY'
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int)
