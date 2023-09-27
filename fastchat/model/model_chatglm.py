@@ -7,6 +7,8 @@ import re
 import torch
 from transformers.generation.logits_process import LogitsProcessor
 
+import os, time
+import numpy as np
 
 class InvalidScoreLogitsProcessor(LogitsProcessor):
     def __call__(
@@ -67,8 +69,20 @@ def generate_stream_chatglm(
     if temperature > 1e-5:
         gen_kwargs["temperature"] = temperature
 
+    first_token_time = None
+    rest_token_time = []
+    enable_perf_output = os.environ.get("ENABLE_PERF_OUTPUT") == "true"
+
     total_len = 0
+    if enable_perf_output:
+        st_timestamp = time.perf_counter()
     for total_ids in model.stream_generate(**inputs, **gen_kwargs):
+        if enable_perf_output:
+            end_timestamp = time.perf_counter()
+            if first_token_time is None:
+                first_token_time = end_timestamp - st_timestamp
+            else:
+                rest_token_time.append(end_timestamp - st_timestamp)
         total_ids = total_ids.tolist()[0]
         total_len = len(total_ids)
         if echo:
@@ -86,7 +100,12 @@ def generate_stream_chatglm(
                 "total_tokens": total_len,
             },
             "finish_reason": None,
+            "first_token_time": first_token_time,
+            "rest_token_time": np.mean(rest_token_time),
         }
+
+        if enable_perf_output:
+            st_timestamp = time.perf_counter()
 
     # TODO: ChatGLM stop when it reach max length
     # Only last stream result contains finish_reason, we set finish_reason as stop
@@ -98,5 +117,7 @@ def generate_stream_chatglm(
             "total_tokens": total_len,
         },
         "finish_reason": "stop",
+        "first_token_time": first_token_time,
+        "rest_token_time": np.mean(rest_token_time),
     }
     yield ret
