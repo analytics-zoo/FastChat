@@ -8,6 +8,7 @@ import torch
 from transformers.generation.logits_process import LogitsProcessor
 
 import os, time
+import numpy as np
 
 class InvalidScoreLogitsProcessor(LogitsProcessor):
     def __call__(
