@@ -7,6 +7,7 @@ import re
 import torch
 from transformers.generation.logits_process import LogitsProcessor
 
+import os
 
 class InvalidScoreLogitsProcessor(LogitsProcessor):
     def __call__(
