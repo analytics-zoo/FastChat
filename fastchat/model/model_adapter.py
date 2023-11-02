@@ -739,6 +739,7 @@ class ChatGLMAdapter(BaseModelAdapter):
 
         if use_bigdl_low_bit_weights:
             model = AutoModel.load_low_bit(model_path, trust_remote_code=True, **from_pretrained_kwargs)
+            model.to(torch.bfloat16)
         else:
             model = AutoModel.from_pretrained(
                 model_path,
