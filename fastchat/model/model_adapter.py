@@ -48,6 +48,8 @@ peft_share_base_weights = (
     os.environ.get("PEFT_SHARE_BASE_WEIGHTS", "false").lower() == "true"
 )
 
+use_bigdl_low_bit_weights = os.environ.get("BIGDL_TRANSFORMER_LOW_BIT", "false").lower() == "true"
+
 
 class BaseModelAdapter:
     """The base and the default model adapter."""
@@ -461,12 +463,15 @@ class BigDLLLMAdapter(BaseModelAdapter):
         )
         from bigdl.llm.transformers import AutoModelForCausalLM
 
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            load_in_4bit=True,
-            low_cpu_mem_usage=True,
-            **from_pretrained_kwargs,
-        )
+        if use_bigdl_low_bit_weights:
+            model = AutoModelForCausalLM.load_low_bit(model_path)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                load_in_4bit=True,
+                low_cpu_mem_usage=True,
+                **from_pretrained_kwargs,
+            )
         return model, tokenizer
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
@@ -732,12 +737,16 @@ class ChatGLMAdapter(BaseModelAdapter):
         )
         from bigdl.llm.transformers import AutoModel
 
-        model = AutoModel.from_pretrained(
-            model_path,
-            trust_remote_code=True,
-            load_in_4bit=True,
-            **from_pretrained_kwargs,
-        )
+        if use_bigdl_low_bit_weights:
+            model = AutoModel.load_low_bit(model_path, trust_remote_code=True, **from_pretrained_kwargs)
+            model.to(torch.bfloat16)
+        else:
+            model = AutoModel.from_pretrained(
+                model_path,
+                trust_remote_code=True,
+                load_in_4bit=True,
+                **from_pretrained_kwargs,
+            )
         return model, tokenizer
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
