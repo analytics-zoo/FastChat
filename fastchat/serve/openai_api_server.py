@@ -582,7 +582,9 @@ async def generate_completion_stream_generator(
                     index=i,
                     text=delta_text,
                     logprobs=content.get("logprobs", None),
-                    finish_reason=content.get("finish_reason", None),
+                    finish_reason=content.get("finish_reason", None),    
+                    first_token_time=content.get("first_token_time", None),
+                    rest_token_time=content.get("rest_token_time", None),
                 )
                 chunk = CompletionStreamResponse(
                     id=id,
