@@ -249,6 +249,7 @@ async def get_gen_params(
     max_tokens: Optional[int],
     echo: Optional[bool],
     stop: Optional[Union[str, List[str]]],
+    ignore_eos: Optional[bool] = False,
 ) -> Dict[str, Any]:
     conv = await get_conv(model_name, worker_addr)
     conv = Conversation(
@@ -293,6 +294,7 @@ async def get_gen_params(
         "max_new_tokens": max_tokens,
         "echo": echo,
         "stop_token_ids": conv.stop_token_ids,
+        "ignore_eos": ignore_eos,
     }
 
     new_stop = set()
@@ -503,6 +505,7 @@ async def create_completion(request: CompletionRequest):
                 max_tokens=request.max_tokens,
                 echo=request.echo,
                 stop=request.stop,
+                ignore_eos=request.ignore_eos,
             )
             for i in range(request.n):
                 content = asyncio.create_task(
