@@ -151,6 +151,7 @@ class CompletionRequest(BaseModel):
     presence_penalty: Optional[float] = 0.0
     frequency_penalty: Optional[float] = 0.0
     user: Optional[str] = None
+    ignore_eos: Optional[bool] = False
 
 
 class CompletionResponseChoice(BaseModel):
