@@ -13,10 +13,14 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 import torch
 import uvicorn
-from vllm import AsyncLLMEngine
-from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.sampling_params import SamplingParams
-from vllm.utils import random_uuid
+# from vllm import AsyncLLMEngine
+# from vllm.engine.arg_utils import AsyncEngineArgs
+# from vllm.sampling_params import SamplingParams
+# from vllm.utils import random_uuid
+from bigdl.llm.vllm.engine.async_llm_engine import AsyncLLMEngine
+from bigdl.llm.vllm.utils.arg_utils import AsyncEngineArgs
+from bigdl.llm.vllm.structure.sampling_params import SamplingParams
+from bigdl.llm.vllm.utils.llm_utils import random_uuid
 
 from fastchat.serve.model_worker import (
     BaseModelWorker,
@@ -74,6 +78,7 @@ class VLLMWorker(BaseModelWorker):
         if self.tokenizer.eos_token_id is not None:
             stop_token_ids.append(self.tokenizer.eos_token_id)
         echo = params.get("echo", True)
+        ignore_eos = params.get('ignore_eos', False)
 
         # Handle stop_str
         stop = set()
@@ -97,6 +102,7 @@ class VLLMWorker(BaseModelWorker):
             use_beam_search=False,
             stop=list(stop),
             max_tokens=max_new_tokens,
+            ignore_eos=ignore_eos,
         )
         results_generator = engine.generate(context, sampling_params, request_id)
 
@@ -208,9 +214,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.model_path:
         args.model = args.model_path
-    if args.num_gpus > 1:
-        args.tensor_parallel_size = args.num_gpus
+    # if args.num_gpus > 1:
+    #     args.tensor_parallel_size = args.num_gpus
 
+    # By default, we are creating a CPU asyncEngineArgs.
+    # TODO: We need to specify --device cpu option, we should use it as default
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     worker = VLLMWorker(
