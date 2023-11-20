@@ -181,7 +181,8 @@ def generate_stream(
         token = tokens[0]
         output_ids.append(token)
 
-        if token in stop_token_ids:
+        ignore_eos = params.get('ignore_eos', False)
+        if (not ignore_eos) and token in stop_token_ids:
             stopped = True
         else:
             stopped = False
