@@ -571,6 +571,7 @@ async def generate_completion_stream_generator(
                 max_tokens=request.max_tokens,
                 echo=request.echo,
                 stop=request.stop,
+                ignore_eos=request.ignore_eos,
             )
             async for content in generate_completion_stream(gen_params, worker_addr):
                 if content["error_code"] != 0:
