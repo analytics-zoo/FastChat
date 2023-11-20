@@ -498,7 +498,7 @@ def create_model_worker():
         default=5,
         help="Limit the model concurrency to prevent OOM.",
     )
-    parser.add_argument("--stream-interval", type=int, default=2)
+    parser.add_argument("--stream-interval", type=int, default=1)
     parser.add_argument("--no-register", action="store_true")
     parser.add_argument(
         "--enable-tls",
