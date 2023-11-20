@@ -22,6 +22,8 @@ from bigdl.llm.vllm.utils.arg_utils import AsyncEngineArgs
 from bigdl.llm.vllm.structure.sampling_params import SamplingParams
 from bigdl.llm.vllm.utils.llm_utils import random_uuid
 
+import numpy as np
+
 from fastchat.serve.model_worker import (
     BaseModelWorker,
     logger,
@@ -115,8 +117,16 @@ class VLLMWorker(BaseModelWorker):
             else:
                 text_outputs = [output.text for output in request_output.outputs]
             text_outputs = " ".join(text_outputs)
+            # TODO: fix this when using beam_search
+            finish_reason = request_output.outputs[0].finish_reason
+            output_token_latency = request_output.outputs[0].output_token_latency
+            first_token_latency = output_token_latency[0]
+            if len(output_token_latency) > 1:
+                rest_token_time = np.mean(output_token_latency[1:])
+            else:
+                rest_token_time = None
             # Note: usage is not supported yet
-            ret = {"text": text_outputs, "error_code": 0, "usage": {}}
+            ret = {"text": text_outputs, "error_code": 0, "usage": {}, "finish_reason": finish_reason, "first_token_time": first_token_latency, "rest_token_time": rest_token_time}
             yield (json.dumps(ret) + "\0").encode()
 
     async def generate(self, params):
