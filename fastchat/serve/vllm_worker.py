@@ -18,9 +18,9 @@ import uvicorn
 # from vllm.sampling_params import SamplingParams
 # from vllm.utils import random_uuid
 from bigdl.llm.vllm.engine.async_llm_engine import AsyncLLMEngine
-from bigdl.llm.vllm.utils.arg_utils import AsyncEngineArgs
-from bigdl.llm.vllm.structure.sampling_params import SamplingParams
-from bigdl.llm.vllm.utils.llm_utils import random_uuid
+from bigdl.llm.vllm.engine.arg_utils import AsyncEngineArgs
+from bigdl.llm.vllm.sampling_params import SamplingParams
+from bigdl.llm.vllm.utils import random_uuid
 
 import numpy as np
 
