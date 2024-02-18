@@ -48,11 +48,11 @@ import base64
 import time
 import hashlib
 
-from langchain.vectorstores import Chroma
-from langchain.document_loaders import TextLoader, PyPDFLoader
+from langchain_community.vectorstores import Chroma
+from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
 from langchain.chains.question_answering import load_qa_chain
 from langchain.chains.chat_vector_db.prompts import (QA_PROMPT)
 
@@ -251,7 +251,7 @@ def load_demo_completion(url_params, request: gr.Request):
 
     if args.model_list_mode == "reload":
         models = get_model_list(
-            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+            controller_url, args.register_openai_compatible_models, args.add_chatgpt, args.add_claude, args.add_palm
         )
 
     return load_demo_single_comp(models, url_params)
@@ -265,7 +265,7 @@ def load_demo_docqa(url_params, request: gr.Request):
     ip_expiration_dict[ip] = time.time() + SESSION_EXPIRATION_TIME
     if args.model_list_mode == "reload":
         models = get_model_list(
-            controller_url, args.add_chatgpt, args.add_claude, args.add_palm
+            controller_url, args.register_openai_compatible_models, args.add_chatgpt, args.add_claude, args.add_palm
         )
 
     return load_demo_single_docqa(models, url_params)
