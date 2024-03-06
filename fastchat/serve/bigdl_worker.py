@@ -21,6 +21,11 @@ from fastchat.serve.model_worker import (
     logger,
     worker_id,
 )
+
+# TODO: delete
+from fastchat.serve.inference import (
+    generate_stream,
+)
 from fastchat.serve.base_model_worker import (
     create_background_tasks,
 )
@@ -67,6 +72,8 @@ class BigDLLLMWorker(BaseModelWorker):
             f"Using low bit format: {self.load_in_low_bit}, device: {device}"
         )
 
+        self.device = device
+
         self.model, self.tokenizer = load_model(model_path, device, self.load_in_low_bit)
         self.context_len = get_context_length(self.model.config)
         if not no_register:
@@ -74,7 +81,8 @@ class BigDLLLMWorker(BaseModelWorker):
         
     # TODO: uncomment
     #async def generate_stream(self, params):
-    def generate_stream(self, params):
+    # TODO: rename
+    def generate_stream2(self, params):
         self.call_ct += 1
         # context length is self.context_length
         prompt = params["prompt"]
@@ -280,6 +288,43 @@ class BigDLLLMWorker(BaseModelWorker):
             pass
         return json.loads(x[:-1].decode())
 
+    def generate_stream_gate(self, params):
+        if self.device == "npu":
+            import torch_npu
+
+            torch_npu.npu.set_device("npu:0")
+        self.call_ct += 1
+
+        try:
+
+            self.generate_stream_func = generate_stream
+            for output in self.generate_stream_func(
+                self.model,
+                self.tokenizer,
+                params,
+                self.device,
+                self.context_len,
+                #self.stream_interval,
+                10,
+            ):
+                ret = {
+                    "text": output["text"],
+                    "error_code": 0,
+                }
+                if "usage" in output:
+                    ret["usage"] = output["usage"]
+                if "finish_reason" in output:
+                    ret["finish_reason"] = output["finish_reason"]
+                if "logprobs" in output:
+                    ret["logprobs"] = output["logprobs"]
+                yield json.dumps(ret).encode() + b"\0"
+        except (ValueError, RuntimeError) as e:
+            ret = {
+                "text": f"Failed test",
+                "error_code": -1,
+            }
+            yield json.dumps(ret).encode() + b"\0"
+
 def release_worker_semaphore():
     worker.semaphore.release()
 
@@ -298,11 +343,20 @@ def create_background_tasks():
 
 ########################## We would need to implement the following APIs############################
 #TODO: we can probably delete this later.
+#TODO: our implementation
+# @app.post("/worker_generate_stream")
+# async def api_generate_stream(request: Request):
+#     params = await request.json()
+#     await acquire_worker_semaphore()
+#     generator = worker.generate_stream(params)
+#     background_tasks = create_background_tasks()
+#     return StreamingResponse(generator, background=background_tasks)
+
 @app.post("/worker_generate_stream")
 async def api_generate_stream(request: Request):
     params = await request.json()
     await acquire_worker_semaphore()
-    generator = worker.generate_stream(params)
+    generator = worker.generate_stream_gate(params)
     background_tasks = create_background_tasks()
     return StreamingResponse(generator, background=background_tasks)
 
