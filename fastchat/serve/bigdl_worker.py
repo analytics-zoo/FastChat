@@ -275,6 +275,11 @@ class BigDLLLMWorker(BaseModelWorker):
         #     }
         # pass
 
+    def generate_gate(self, params):
+        for x in self.generate_stream(params):
+            pass
+        return json.loads(x[:-1].decode())
+
 def release_worker_semaphore():
     worker.semaphore.release()
 
@@ -292,6 +297,7 @@ def create_background_tasks():
 
 
 ########################## We would need to implement the following APIs############################
+#TODO: we can probably delete this later.
 @app.post("/worker_generate_stream")
 async def api_generate_stream(request: Request):
     params = await request.json()
@@ -300,17 +306,16 @@ async def api_generate_stream(request: Request):
     background_tasks = create_background_tasks()
     return StreamingResponse(generator, background=background_tasks)
 
-# @app.post("/worker_generate")
-# async def api_generate(request: Request):
-#     params = await request.json()
-#     await acquire_worker_semaphore()
-#     request_id = random_uuid()
-#     params["request_id"] = request_id
-#     params["request"] = request
-#     output = await worker.generate(params)
-#     release_worker_semaphore()
-#     await engine.abort(request_id)
-#     return JSONResponse(output)
+# TODO: finish reason -> None
+
+#TODO: we can safely delete this later.
+@app.post("/worker_generate")
+async def api_generate(request: Request):
+    params = await request.json()
+    await acquire_worker_semaphore()
+    output = await asyncio.to_thread(worker.generate_gate, params)
+    release_worker_semaphore()
+    return JSONResponse(output)
 
 
 @app.post("/worker_get_status")
