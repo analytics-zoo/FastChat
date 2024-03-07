@@ -21,13 +21,10 @@ from fastchat.serve.model_worker import (
     logger,
     worker_id,
 )
-
-# TODO: delete
-from fastchat.serve.inference import (
-    generate_stream,
-)
 from fastchat.serve.base_model_worker import (
     create_background_tasks,
+    acquire_worker_semaphore,
+    release_worker_semaphore,
 )
 from fastchat.utils import get_context_length, is_partial_stop
 
@@ -36,7 +33,6 @@ from transformers import TextIteratorStreamer
 
 app = FastAPI()
 
-# TODO: decide if we need stream_interval
 
 class BigDLLLMWorker(BaseModelWorker):
     def __init__(
@@ -48,10 +44,10 @@ class BigDLLLMWorker(BaseModelWorker):
         model_names: List[str],
         limit_worker_concurrency: int,
         conv_template: str = None,
-        load_in_low_bit: str = 'sym_int4',
-        device: str = 'cpu',
+        load_in_low_bit: str = "sym_int4",
+        device: str = "cpu",
         no_register: bool = False,
-        # TODO: multimodel
+        trust_remote_code: bool = False,
     ):
         super().__init__(
             controller_addr,
@@ -68,21 +64,18 @@ class BigDLLLMWorker(BaseModelWorker):
             f"Loading the model {self.model_names} on worker {worker_id}, worker type: BigDLLLM worker..."
         )
 
-        logger.info(
-            f"Using low bit format: {self.load_in_low_bit}, device: {device}"
-        )
+        logger.info(f"Using low bit format: {self.load_in_low_bit}, device: {device}")
 
         self.device = device
 
-        self.model, self.tokenizer = load_model(model_path, device, self.load_in_low_bit)
+        self.model, self.tokenizer = load_model(
+            model_path, device, self.load_in_low_bit, trust_remote_code
+        )
         self.context_len = get_context_length(self.model.config)
         if not no_register:
             self.init_heart_beat()
-        
-    # TODO: uncomment
-    #async def generate_stream(self, params):
-    # TODO: rename
-    def generate_stream2(self, params):
+
+    def generate_stream_gate(self, params):
         self.call_ct += 1
         # context length is self.context_length
         prompt = params["prompt"]
@@ -91,23 +84,19 @@ class BigDLLLMWorker(BaseModelWorker):
         top_p = float(params.get("top_p", 1.0))
         top_k = int(params.get("top_k", -1))  # -1 means disable
         max_new_tokens = int(params.get("max_new_tokens", 256))
-        # TODO: logprobs probably not supported
-        logprobs = params.get("logprobs", None)
         echo = bool(params.get("echo", True))
         stop_str = params.get("stop", None)
         stop_token_ids = params.get("stop_token_ids", None) or []
         if self.tokenizer.eos_token_id not in stop_token_ids:
             stop_token_ids.append(self.tokenizer.eos_token_id)
 
-        # Add stop string to stop set
+        # Handle stop_str
         stop = set()
         if isinstance(stop_str, str) and stop_str != "":
             stop.add(stop_str)
         elif isinstance(stop_str, list) and stop_str != []:
             stop.update(stop_str)
 
-        # We no longer need to handle stop_token_ids
-        # But only stop
         for tid in stop_token_ids:
             if tid is not None:
                 s = self.tokenizer.decode(tid)
@@ -116,35 +105,45 @@ class BigDLLLMWorker(BaseModelWorker):
 
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt")
 
+        input_echo_len = input_ids.shape[1]
+
         if self.model.config.is_encoder_decoder:
             max_src_len = self.context_len
+            input_ids = input_ids[:max_src_len]
+            input_echo_len = len(input_ids)
+            prompt = self.tokenizer.decode(
+                input_ids,
+                skip_special_tokens=True,
+                spaces_between_special_tokens=False,
+                clean_up_tokenization_spaces=True,
+            )
         else:
-            max_src_len = self.context_len - max_new_tokens
+            # Truncate the max_new_tokens if input_ids is too long
+            new_max_new_tokens = min(self.context_len - input_echo_len, max_new_tokens)
+            if new_max_new_tokens < max_new_tokens:
+                logger.info(
+                    f"Warning: max_new_tokens[{max_new_tokens}] + prompt[{input_echo_len}] greater than context_length[{self.context_len}]"
+                )
+                logger.info(f"Reset max_new_tokens to {new_max_new_tokens}")
+                max_new_tokens = new_max_new_tokens
 
-        input_ids = input_ids[-max_src_len:]
-
-        input_echo_len = len(input_ids)
-
-
-        ####################Preparation is done ######################################
-
-
-        # 2. Generate a generator, then for it to generate the result
-
-
+        # Use TextIteratorStreamer for streaming output
         streamer = TextIteratorStreamer(
-            tokenizer=self.tokenizer, timeout=60.0, skip_prompt=True, skip_special_tokens=True
+            tokenizer=self.tokenizer,
+            timeout=5,
+            skip_prompt=True,
+            skip_special_tokens=True,
         )
 
-        # Possible generation config:
+        # Generation config:
         # https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationConfig
         generated_kwargs = dict(
-            max_new_tokens = max_new_tokens,
-            streamer = streamer,
-            temperature = temperature,
-            repetition_penalty = repetition_penalty,
-            top_p = top_p,
-            top_k = top_k,
+            max_new_tokens=max_new_tokens,
+            streamer=streamer,
+            temperature=temperature,
+            repetition_penalty=repetition_penalty,
+            top_p=top_p,
+            top_k=top_k,
         )
 
         def model_generate():
@@ -153,32 +152,6 @@ class BigDLLLMWorker(BaseModelWorker):
         t1 = Thread(target=model_generate)
         t1.start()
 
-        # partial_text = ""
-        # for next_text in streamer:
-        #     partial_text += next_text
-        #     # print(next_text)
-
-        """
-        Logic for the entire procedure:
-        1. Get the output token
-        2. (Optional) Logprobs
-        3. Check if token in stop_token_ids
-            If yes, set stopped to True
-            Otherwise set stopped to False
-        4. Yield the output tokens
-            Check stream_interval or max_tokens or stopped
-            (Not needed) decode the token
-            (Optional) logprobs processed
-            (Optional) judge_sent_end
-            Check stop_str -> set stopped to true
-            Check partially_stopped -> if partially stopped, continue
-                else yield the token
-            Check stopped, break
-
-            for loop ends, finish reason="length"
-            otherwise, finish_reason="stop"
-            yield last one
-        """
         stopped = False
         finish_reason = None
         if echo:
@@ -193,12 +166,13 @@ class BigDLLLMWorker(BaseModelWorker):
             try:
                 output_token = next(streamer)
             except StopIteration:
-                    # TODO: handle this StopIteration
-                    print("Reached StopIteration")
-                    break
+                # Stop early
+                stopped = True
+                break
 
-                # Check if this new token is in stop
+            # Check if this new token is in stop
             partial_output += output_token
+            partially_stopped = False
             for each_stop in stop:
                 pos = partial_output.rfind(each_stop, rfind_start)
                 if pos != -1:
@@ -245,113 +219,16 @@ class BigDLLLMWorker(BaseModelWorker):
             },
             "finish_reason": finish_reason,
         }
-        # ret = {
-        #     "text": json_output["text"],
-        #     "error_code": 0,
-        # }
-        # ret["usage"] = json_output["usage"]
-        # ret["finish_reason"] = json_output["finish_reason"]
         yield json.dumps(json_output).encode() + b"\0"
 
-
-
-        # Get the result from the streamer
-        # TODO: uncomment
-        # for next_text in streamer:
-        #     print(next_text)
-        # for next_text in streamer:
-        #     if echo:
-        #         text_outputs = [
-        #             prompt + next_text
-        #         ]
-        #     else:
-        #         text_outputs = [next_text]
-        #     text_outputs = " ".join(text_outputs)
-
-        #     partial_stop = any(is_partial_stop(text_outputs, i) for i in stop)
-
-        #     if partial_stop:
-        #         continue
-
-        #     # aborted = False
-        #     ret = {
-        #         "text": text_outputs,
-        #         "error_code": 0,
-        #         "usage": {
-        #             "prompt_tokens": prompt_tokens,
-        #         }
-        #     }
-        # pass
-
     def generate_gate(self, params):
-        for x in self.generate_stream(params):
+        for x in self.generate_stream_gate(params):
+            # for x in self.generate_stream2(params):
             pass
         return json.loads(x[:-1].decode())
 
-    def generate_stream_gate(self, params):
-        if self.device == "npu":
-            import torch_npu
 
-            torch_npu.npu.set_device("npu:0")
-        self.call_ct += 1
-
-        try:
-
-            self.generate_stream_func = generate_stream
-            for output in self.generate_stream_func(
-                self.model,
-                self.tokenizer,
-                params,
-                self.device,
-                self.context_len,
-                #self.stream_interval,
-                10,
-            ):
-                ret = {
-                    "text": output["text"],
-                    "error_code": 0,
-                }
-                if "usage" in output:
-                    ret["usage"] = output["usage"]
-                if "finish_reason" in output:
-                    ret["finish_reason"] = output["finish_reason"]
-                if "logprobs" in output:
-                    ret["logprobs"] = output["logprobs"]
-                yield json.dumps(ret).encode() + b"\0"
-        except (ValueError, RuntimeError) as e:
-            ret = {
-                "text": f"Failed test",
-                "error_code": -1,
-            }
-            yield json.dumps(ret).encode() + b"\0"
-
-def release_worker_semaphore():
-    worker.semaphore.release()
-
-
-def acquire_worker_semaphore():
-    if worker.semaphore is None:
-        worker.semaphore = asyncio.Semaphore(worker.limit_worker_concurrency)
-    return worker.semaphore.acquire()
-
-def create_background_tasks():
-    background_tasks = BackgroundTasks()
-    background_tasks.add_task(release_worker_semaphore)
-    return background_tasks
-
-
-
-########################## We would need to implement the following APIs############################
-#TODO: we can probably delete this later.
-#TODO: our implementation
-# @app.post("/worker_generate_stream")
-# async def api_generate_stream(request: Request):
-#     params = await request.json()
-#     await acquire_worker_semaphore()
-#     generator = worker.generate_stream(params)
-#     background_tasks = create_background_tasks()
-#     return StreamingResponse(generator, background=background_tasks)
-
+# Below are api interfaces
 @app.post("/worker_generate_stream")
 async def api_generate_stream(request: Request):
     params = await request.json()
@@ -360,9 +237,7 @@ async def api_generate_stream(request: Request):
     background_tasks = create_background_tasks()
     return StreamingResponse(generator, background=background_tasks)
 
-# TODO: finish reason -> None
 
-#TODO: we can safely delete this later.
 @app.post("/worker_generate")
 async def api_generate(request: Request):
     params = await request.json()
@@ -393,10 +268,6 @@ async def api_model_details(request: Request):
     return {"context_length": worker.context_len}
 
 
-
-
-
-# TODO: modify
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="localhost")
@@ -416,22 +287,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--conv-template", type=str, default=None, help="Conversation prompt template."
     )
-    # TODO: add options
     parser.add_argument(
-        "--low-bit", type=str, default='sym_int4', help="Low bit format."
+        "--low-bit", type=str, default="sym_int4", help="Low bit format."
     )
-    # TODO: add options for possible quantization type
     parser.add_argument(
-        "--device", type=str, default='cpu', help="Device for executing model, cpu/xpu"
+        "--device", type=str, default="cpu", help="Device for executing model, cpu/xpu"
     )
-    # TODO: we might want to enable this instead of setting it to default
-    # parser.add_argument(
-    #     "--trust_remote_code",
-    #     action="store_false",
-    #     default=True,
-    #     help="Trust remote code (e.g., from HuggingFace) when"
-    #     "downloading the model and tokenizer.",
-    # )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_false",
+        default=True,
+        help="Trust remote code (e.g., from HuggingFace) when"
+        "downloading the model and tokenizer.",
+    )
 
     args = parser.parse_args()
     worker = BigDLLLMWorker(
@@ -445,14 +313,6 @@ if __name__ == "__main__":
         args.low_bit,
         args.device,
         args.no_register,
+        args.trust_remote_code,
     )
-
-    # params = {
-    #     "prompt": "What is AI?",
-    # }
-    # generator = worker.generate_stream(params)
-    # for jsons in generator:
-    #     print(jsons)
-
-    # TODO: uncomment
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
