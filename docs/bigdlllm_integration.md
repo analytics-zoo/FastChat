@@ -4,7 +4,7 @@ It offers the functionality to accelerate LLM inference on Intel CPU and GPU usi
 See the supported models [here](https://github.com/intel-analytics/BigDL?tab=readme-ov-file#verified-models).
 
 ## Instruction
-1. Install vLLM.
+1. Install BigDL-LLM.
 
 ```bash
 # Recommended to use conda environment
