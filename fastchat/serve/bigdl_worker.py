@@ -48,6 +48,7 @@ class BigDLLLMWorker(BaseModelWorker):
         device: str = "cpu",
         no_register: bool = False,
         trust_remote_code: bool = False,
+        stream_interval: int = 4,
     ):
         super().__init__(
             controller_addr,
@@ -71,6 +72,7 @@ class BigDLLLMWorker(BaseModelWorker):
         self.model, self.tokenizer = load_model(
             model_path, device, self.load_in_low_bit, trust_remote_code
         )
+        self.stream_interval = stream_interval
         self.context_len = get_context_length(self.model.config)
         if not no_register:
             self.init_heart_beat()
@@ -162,19 +164,17 @@ class BigDLLLMWorker(BaseModelWorker):
             rfind_start = 0
 
         for i in range(max_new_tokens):
-            # Get a token from the streamer
             try:
                 output_token = next(streamer)
             except StopIteration:
                 # Stop early
                 stopped = True
                 break
-
-            # Check if this new token is in stop
             partial_output += output_token
-            partially_stopped = False
-            for each_stop in stop:
-                pos = partial_output.rfind(each_stop, rfind_start)
+
+            if i % self.stream_interval == 0 or i == max_new_tokens - 1 or stopped:
+                for each_stop in stop:
+                    pos = partial_output.rfind(each_stop, rfind_start)
                 if pos != -1:
                     partial_output = partial_output[:pos]
                     stopped = True
@@ -183,23 +183,23 @@ class BigDLLLMWorker(BaseModelWorker):
                     partially_stopped = is_partial_stop(partial_output, each_stop)
                     if partially_stopped:
                         break
-            if not partially_stopped:
-                json_output = {
-                    "text": partial_output,
-                    "usage": {
-                        "prompt_tokens": input_echo_len,
-                        "completion_tokens": i,
-                        "total_tokens": input_echo_len + i,
-                    },
-                    "finish_reason": None,
-                }
-                ret = {
-                    "text": json_output["text"],
-                    "error_code": 0,
-                }
-                ret["usage"] = json_output["usage"]
-                ret["finish_reason"] = json_output["finish_reason"]
-                yield json.dumps(ret).encode() + b"\0"
+                if not partially_stopped:
+                    json_output = {
+                        "text": partial_output,
+                        "usage": {
+                            "prompt_tokens": input_echo_len,
+                            "completion_tokens": i,
+                            "total_tokens": input_echo_len + i,
+                        },
+                        "finish_reason": None,
+                    }
+                    ret = {
+                        "text": json_output["text"],
+                        "error_code": 0,
+                    }
+                    ret["usage"] = json_output["usage"]
+                    ret["finish_reason"] = json_output["finish_reason"]
+                    yield json.dumps(ret).encode() + b"\0"
 
             if stopped:
                 break
@@ -208,7 +208,6 @@ class BigDLLLMWorker(BaseModelWorker):
 
         if stopped:
             finish_reason = "stop"
-
         json_output = {
             "text": partial_output,
             "error_code": 0,
@@ -287,6 +286,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--conv-template", type=str, default=None, help="Conversation prompt template."
     )
+    parser.add_argument("--stream-interval", type=int, default=4)
     parser.add_argument(
         "--low-bit", type=str, default="sym_int4", help="Low bit format."
     )
