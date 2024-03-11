@@ -106,6 +106,8 @@ class BigDLLLMWorker(BaseModelWorker):
                     stop.add(s)
 
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt")
+        if self.device == "xpu":
+            input_ids = input_ids.to("xpu")
 
         input_echo_len = input_ids.shape[1]
 
@@ -132,7 +134,7 @@ class BigDLLLMWorker(BaseModelWorker):
         # Use TextIteratorStreamer for streaming output
         streamer = TextIteratorStreamer(
             tokenizer=self.tokenizer,
-            timeout=5,
+            timeout=60,
             skip_prompt=True,
             skip_special_tokens=True,
         )
