@@ -1,7 +1,7 @@
 """
 A model worker that executes the model based on BigDL-LLM.
 
-TODO: add documentation
+See documentations at docs/bigdlllm_integration.md
 """
 
 import argparse
