@@ -108,18 +108,20 @@ class DeltaMessage(BaseModel):
     content: Optional[str] = None
 
 
-class ChatCompletionResponseStreamChoice(BaseModel):
+class ChatCompletionStreamChoice(BaseModel):
     index: int
-    delta: DeltaMessage
+    message: DeltaMessage
     finish_reason: Optional[Literal["stop", "length"]] = None
 
+class ChatCompletionStreamDetails(BaseModel):
+    best_of_sequences: List[ChatCompletionStreamChoice]
 
 class ChatCompletionStreamResponse(BaseModel):
     id: str = Field(default_factory=lambda: f"chatcmpl-{shortuuid.random()}")
     object: str = "chat.completion.chunk"
     created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseStreamChoice]
+    details: ChatCompletionStreamDetails
+    generated_text: Optional[str]
 
 
 class TokenCheckRequestItem(BaseModel):
