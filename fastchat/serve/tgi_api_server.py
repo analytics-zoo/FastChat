@@ -401,7 +401,6 @@ async def create_chat_completion(request: ChatCompletionRequest):
     """Creates a completion for the chat message"""
 
     request.model = await get_last_model_name_from_list()
-    print(f"[INFO] request.model: {request.model}")
 
     worker_addr = await get_worker_address(request.model)
 
@@ -471,17 +470,18 @@ async def create_chat_completion(request: ChatCompletionRequest):
 async def create_chat_completion_stream(request: ChatCompletionRequest):
     """Creates a completion for the chat message"""
 
-    request.model = get_last_model_name_from_list()
+    request.model = await get_last_model_name_from_list()
 
     worker_addr = await get_worker_address(request.model)
 
     gen_params = await get_gen_params(
         request.model,
         worker_addr,
+        request.inputs,
         temperature=request.parameters.temperature,
         top_p=request.parameters.top_p,
         top_k=request.parameters.top_k,
-        presence_penalty=request.parameters.presence_penalty,
+        presence_penalty=request.parameters.repetition_penalty,
         frequency_penalty=request.parameters.frequency_penalty,
         max_tokens=request.parameters.max_new_tokens,
         echo=False,
@@ -515,15 +515,18 @@ async def chat_completion_stream_generator(
     """
     id = f"chatcmpl-{shortuuid.random()}"
     finish_stream_events = []
+    
     for i in range(n):
         # First chunk with role
-        choice_data = ChatCompletionResponseStreamChoice(
+        choice_data = ChatCompletionStreamChoice(
             index=i,
-            delta=DeltaMessage(role="assistant"),
+            message=DeltaMessage(role="assistant"),
             finish_reason=None,
         )
+        details = ChatCompletionStreamDetails(best_of_sequences=[choice_data])
+        
         chunk = ChatCompletionStreamResponse(
-            id=id, choices=[choice_data], model=model_name
+            id=id, details=details, generated_text=""
         )
         yield f"data: {json.dumps(chunk.model_dump(exclude_unset=True), ensure_ascii=False)}\n\n"
 
@@ -543,13 +546,17 @@ async def chat_completion_stream_generator(
 
             if len(delta_text) == 0:
                 delta_text = None
-            choice_data = ChatCompletionResponseStreamChoice(
+            choice_data = ChatCompletionStreamChoice(
                 index=i,
-                delta=DeltaMessage(content=delta_text),
+                message=DeltaMessage(content=delta_text),
                 finish_reason=content.get("finish_reason", None),
             )
+            details = ChatCompletionStreamDetails(best_of_sequences=[choice_data])
+            print(f"type of delta_text: {type(delta_text)}")
             chunk = ChatCompletionStreamResponse(
-                id=id, choices=[choice_data], model=model_name
+                id=id,
+                details=details,
+                generated_text=delta_text
             )
             if delta_text is None:
                 if content.get("finish_reason", None) is not None:
