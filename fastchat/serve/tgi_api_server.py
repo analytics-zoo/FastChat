@@ -451,10 +451,12 @@ async def create_chat_completion(request: ChatCompletionRequest):
                 index=i,
                 message=ChatMessage(role="assistant", content=content["text"]),
                 finish_reason=content.get("finish_reason", "stop"),
+                generated_text=content["text"]
             )
         )
         if "usage" in content:
             task_usage = UsageInfo.parse_obj(content["usage"])
+            choices[-1].generated_tokens = task_usage.dict()["completion_tokens"]
             for usage_key, usage_value in task_usage.dict().items():
                 setattr(usage, usage_key, getattr(usage, usage_key) + usage_value)
     
