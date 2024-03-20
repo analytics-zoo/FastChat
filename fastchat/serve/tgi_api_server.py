@@ -56,7 +56,7 @@ from fastchat.constants import (
     ErrorCode,
 )
 from fastchat.conversation import Conversation, SeparatorStyle
-from .tgi_api_protocol import (
+from fastchat.protocol.tgi_api_protocol import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatCompletionStreamChoice,
