@@ -28,7 +28,7 @@ from fastchat.serve.base_model_worker import (
 )
 from fastchat.utils import get_context_length, is_partial_stop
 
-from bigdl.llm.transformers.loader import load_model
+from ipex_llm.transformers.loader import load_model
 from transformers import TextIteratorStreamer
 
 app = FastAPI()
