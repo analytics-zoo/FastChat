@@ -59,7 +59,6 @@ def tokenize_special_prompt(tokenizer, prompt):
         encoded = tokenizer.encode(prompt[start:i], return_tensors="pt")
         parts.append(torch.tensor(encoded[0]))
     
-    logger.info(parts)
     return torch.cat(parts).unsqueeze(0)
 
 class BigDLLLMWorker(BaseModelWorker):
@@ -132,11 +131,11 @@ class BigDLLLMWorker(BaseModelWorker):
                 s = self.tokenizer.decode(tid)
                 if s != "":
                     stop.add(s)
-        logger.info(prompt)
+
         input_ids = tokenize_special_prompt(self.tokenizer, prompt)
         # input_ids = self.tokenizer.encode(prompt, return_tensors="pt")
         
-        logger.info(input_ids)
+
         if self.device == "xpu":
             input_ids = input_ids.to("xpu")
 
