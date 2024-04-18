@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import atexit
 import json
+import torch
 from typing import List
 import uuid
 from threading import Thread
@@ -33,6 +34,32 @@ from transformers import TextIteratorStreamer
 
 app = FastAPI()
 
+special_tokens_map = {
+    "<H_Q>" : 195,
+    "<H_A>" : 196,
+    "<C_Q>" : 195,
+    "<C_A>" : 196
+}
+
+def tokenize_special_prompt(tokenizer, prompt):
+    parts = []
+    start = 0
+    for i in range(len(prompt)):
+        for token, token_id in special_tokens_map.items():
+            if prompt[i:].startswith(token):
+                if i > start:
+                    encoded = tokenizer.encode(prompt[start:i], return_tensors="pt")
+                    parts.append(encoded[0])
+                parts.append(torch.tensor([token_id]))
+                start = i + len(token)
+                i += len(token) - 1
+                break
+
+    if start < len(prompt):
+        encoded = tokenizer.encode(prompt[start:i], return_tensors="pt")
+        parts.append(torch.tensor(encoded[0]))
+    
+    return torch.cat(parts).unsqueeze(0)
 
 class BigDLLLMWorker(BaseModelWorker):
     def __init__(
@@ -105,7 +132,10 @@ class BigDLLLMWorker(BaseModelWorker):
                 if s != "":
                     stop.add(s)
 
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt")
+        input_ids = tokenize_special_prompt(self.tokenizer, prompt)
+        # input_ids = self.tokenizer.encode(prompt, return_tensors="pt")
+        
+
         if self.device == "xpu":
             input_ids = input_ids.to("xpu")
 
