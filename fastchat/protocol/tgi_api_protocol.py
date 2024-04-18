@@ -4,7 +4,9 @@ import time
 
 import shortuuid
 from pydantic import BaseModel, Field
+import sys
 
+pseudo_infinite_int = sys.maxsize
 
 class ErrorResponse(BaseModel):
     object: str = "error"
@@ -59,25 +61,25 @@ class LogProbs(BaseModel):
     top_logprobs: List[Optional[Dict[str, float]]] = Field(default_factory=list)
 
 class Grammar(BaseModel):
-    type: str
-    value: str
+    type: str = "json"
+    value: str = "string"
 
 class ChatCompletionParam(BaseModel):
     best_of: Optional[int] = 1
     decoder_input_details: Optional[bool] = True
-    details: Optional[bool] = True
-    do_sample: Optional[bool] = True
+    details: Optional[bool] = False
+    do_sample: Optional[bool] = False
     frequency_penalty: Optional[float] = 0.1
-    grammar: Optional[Grammar]
-    max_new_tokens: Optional[int] = 20
-    repetition_penalty: Optional[float] = 1.03
+    grammar: Optional[Grammar] = Grammar()
+    max_new_tokens: Optional[int] = None
+    repetition_penalty: Optional[float] = 1.0
     return_full_text: Optional[bool] = False
-    seed: Optional[float] = 0.0
+    seed: Optional[float] = None
     stop: Optional[List[str]] = []
-    temperature: Optional[float] = 0.5
-    top_k: Optional[int] = 10
+    temperature: Optional[float] = 1.0
+    top_k: Optional[int] = pseudo_infinite_int
     top_n_tokens: Optional[int] = 5
-    top_p: Optional[float] = 0.95
+    top_p: Optional[float] = 1.0
     truncate: Optional[bool] = False
     typical_p: Optional[float] = 0.95
     watermark: Optional[bool] = True
