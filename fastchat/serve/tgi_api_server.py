@@ -555,7 +555,6 @@ async def chat_completion_stream_generator(
     https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
     """
     id = f"chatcmpl-{shortuuid.random()}"
-    finish_stream_events = []
     generated_tokens = 0
     prefill_tokens = 0
     
@@ -590,13 +589,7 @@ async def chat_completion_stream_generator(
 
             if len(delta_text) == 0:
                 delta_text = None
-            choice_data = ChatCompletionStreamChoice(
-                index=i,
-                message=DeltaMessage(content=delta_text),
-                finish_reason=content.get("finish_reason", None),
-            )
             delta_text = delta_text if isinstance(delta_text, str) else ""
-            print(delta_text)
             chunk = ChatCompletionStreamResponse(
                 token=StreamToken(id=random.randint(1, 1000000), text = delta_text, special = not isinstance(delta_text, str)),
             )
