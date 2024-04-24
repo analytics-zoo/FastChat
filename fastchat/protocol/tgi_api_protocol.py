@@ -121,13 +121,6 @@ class ChatCompletionStreamChoice(BaseModel):
 class ChatCompletionStreamDetails(BaseModel):
     best_of_sequences: List[ChatCompletionStreamChoice]
 
-# class ChatCompletionStreamResponse(BaseModel):
-#     id: str = Field(default_factory=lambda: f"chatcmpl-{shortuuid.random()}")
-#     object: str = "chat.completion.chunk"
-#     created: int = Field(default_factory=lambda: int(time.time()))
-#     details: ChatCompletionStreamDetails
-#     generated_text: Optional[str]
-
 class StreamToken(BaseModel):
     id: int
     text: str
