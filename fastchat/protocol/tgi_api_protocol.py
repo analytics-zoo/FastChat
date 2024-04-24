@@ -5,6 +5,7 @@ import time
 import shortuuid
 from pydantic import BaseModel, Field
 import sys
+import random
 
 pseudo_infinite_int = sys.maxsize
 
@@ -120,14 +121,25 @@ class ChatCompletionStreamChoice(BaseModel):
 class ChatCompletionStreamDetails(BaseModel):
     best_of_sequences: List[ChatCompletionStreamChoice]
 
+# class ChatCompletionStreamResponse(BaseModel):
+#     id: str = Field(default_factory=lambda: f"chatcmpl-{shortuuid.random()}")
+#     object: str = "chat.completion.chunk"
+#     created: int = Field(default_factory=lambda: int(time.time()))
+#     details: ChatCompletionStreamDetails
+#     generated_text: Optional[str]
+
+class StreamToken(BaseModel):
+    id: int
+    text: str
+    logprob: Optional[float] = 0.0
+    special: Optional[bool] = False
+
 class ChatCompletionStreamResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{shortuuid.random()}")
-    object: str = "chat.completion.chunk"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    details: ChatCompletionStreamDetails
-    generated_text: Optional[str]
-
-
+    token: StreamToken
+    generated_text: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    special_ret: Optional[Dict[str, Any]] = None
+    
 class TokenCheckRequestItem(BaseModel):
     model: str
     prompt: str
